@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase'
+
+const supabase = createClient()
 
 type ProfileData = {
   id: string;
@@ -211,6 +213,49 @@ export default function OrderDetailPage() {
     setErrorMessage('');
   };
 
+  const getAccessToken = async () => {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const token = session?.access_token;
+
+    if (!token) {
+      throw new Error('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.');
+    }
+
+    return token;
+  };
+
+  const callSecureOrderApi = async (
+    url: string,
+    body: Record<string, unknown> = {}
+  ) => {
+    const accessToken = await getAccessToken();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const json = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(json?.error || '요청 처리 중 오류가 발생했습니다.');
+    }
+
+    return json;
+  };
+
   const refreshOrderData = async () => {
     if (!orderId || !profileData) return;
 
@@ -257,16 +302,9 @@ export default function OrderDetailPage() {
       resetMessages();
       setActionLoading(true);
 
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          status: selectedStatus,
-        })
-        .eq('id', orderData.id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
+      await callSecureOrderApi(`/api/orders/${orderData.id}/status`, {
+        status: selectedStatus,
+      });
 
       await refreshOrderData();
       setStatusMessage('주문 상태가 변경되었습니다.');
@@ -280,27 +318,15 @@ export default function OrderDetailPage() {
   };
 
   const handleSendRevisionRequest = async () => {
-    if (!isAdmin || !orderData || !profileData) return;
+    if (!isAdmin || !orderData) return;
 
     try {
       resetMessages();
       setSendingRevisionRequest(true);
 
-      const note = revisionRequestNote.trim();
-
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          admin_revision_requested: true,
-          admin_revision_requested_at: new Date().toISOString(),
-          admin_revision_request_note: note,
-          admin_revision_requested_by: profileData.id,
-        })
-        .eq('id', orderData.id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
+      await callSecureOrderApi(`/api/orders/${orderData.id}/revision-request`, {
+        note: revisionRequestNote.trim(),
+      });
 
       await refreshOrderData();
       setStatusMessage('주문 수정 요청이 등록되었습니다.');
@@ -323,24 +349,9 @@ export default function OrderDetailPage() {
       resetMessages();
       setCancelingOrder(true);
 
-      const updatePayload = {
-        is_canceled: true,
-        canceled_at: new Date().toISOString(),
-        canceled_by: profileData.role,
-        cancel_reason: cancelReason.trim() || (isAdmin ? '관리자 취소' : '치과 취소'),
-      };
-
-      let updateQuery = supabase.from('orders').update(updatePayload).eq('id', orderData.id);
-
-      if (!isAdmin) {
-        updateQuery = updateQuery.eq('user_id', profileData.id).eq('status', '접수 대기');
-      }
-
-      const { error } = await updateQuery;
-
-      if (error) {
-        throw new Error(error.message);
-      }
+      await callSecureOrderApi(`/api/orders/${orderData.id}/cancel`, {
+        cancel_reason: cancelReason.trim(),
+      });
 
       await refreshOrderData();
       setStatusMessage('주문이 취소되었습니다.');
@@ -431,32 +442,13 @@ export default function OrderDetailPage() {
         uploadedPaths.push(filePath);
       }
 
-      const updatePayload: Partial<OrderData> & {
-        design_file_names: string[];
-        design_file_paths: string[];
-      } = {
-        design_file_names: [...designFileNames, ...uploadedNames],
-        design_file_paths: [...designFilePaths, ...uploadedPaths],
-      };
+      const nextDesignFileNames = [...designFileNames, ...uploadedNames];
+      const nextDesignFilePaths = [...designFilePaths, ...uploadedPaths];
 
-      if (isClinic) {
-        updatePayload.admin_revision_requested = false;
-        updatePayload.admin_revision_requested_at = null;
-        updatePayload.admin_revision_request_note = null;
-        updatePayload.admin_revision_requested_by = null;
-      }
-
-      let updateQuery = supabase.from('orders').update(updatePayload).eq('id', orderData.id);
-
-      if (!isAdmin && profileData?.id) {
-        updateQuery = updateQuery.eq('user_id', profileData.id);
-      }
-
-      const { error: updateError } = await updateQuery;
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
+      await callSecureOrderApi(`/api/orders/${orderData.id}/design-files`, {
+        design_file_names: nextDesignFileNames,
+        design_file_paths: nextDesignFilePaths,
+      });
 
       await refreshOrderData();
       setStatusMessage(
