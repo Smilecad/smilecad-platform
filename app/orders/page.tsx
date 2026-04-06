@@ -180,10 +180,6 @@ export default function OrdersPage() {
     router.replace('/login')
   }
 
-  const goToDashboard = () => {
-    router.push('/dashboard')
-  }
-
   const goToOrderDetail = (orderId: string) => {
     router.push(`/orders/${orderId}`)
   }
@@ -222,7 +218,7 @@ export default function OrdersPage() {
   const renderStatusBadge = (order: OrderItem) => {
     if (order.is_canceled) {
       return (
-        <span className="inline-flex rounded-md bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 ring-1 ring-red-200">
+        <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
           주문 취소
         </span>
       )
@@ -230,7 +226,7 @@ export default function OrdersPage() {
 
     if (order.status === '접수 대기') {
       return (
-        <span className="inline-flex rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+        <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
           접수 대기
         </span>
       )
@@ -238,14 +234,14 @@ export default function OrdersPage() {
 
     if (order.status === '디자인 작업중') {
       return (
-        <span className="inline-flex rounded-md bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 ring-1 ring-blue-200">
+        <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
           디자인 작업중
         </span>
       )
     }
 
     return (
-      <span className="inline-flex rounded-md bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 ring-1 ring-emerald-200">
+      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
         배송중
       </span>
     )
@@ -277,10 +273,10 @@ export default function OrdersPage() {
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 md:px-8">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-sm font-bold tracking-[0.2em] text-blue-600">
                   SMILECAD PLATFORM
@@ -304,13 +300,6 @@ export default function OrdersPage() {
                     신규 주문 등록
                   </button>
                 )}
-
-                <button
-                  onClick={goToDashboard}
-                  className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
-                >
-                  대시보드
-                </button>
 
                 <button
                   onClick={handleLogout}
@@ -400,7 +389,7 @@ export default function OrdersPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           {renderStatusBadge(order)}
                           {order.admin_revision_requested && !order.is_canceled && (
-                            <span className="inline-flex rounded-md bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 ring-1 ring-rose-200">
+                            <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
                               수정 요청
                             </span>
                           )}
@@ -409,7 +398,7 @@ export default function OrdersPage() {
                       <td className="px-6 py-5">
                         <button
                           onClick={() => goToOrderDetail(order.id)}
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           상세 보기
                         </button>
@@ -470,7 +459,7 @@ export default function OrdersPage() {
                   <div className="mt-4 flex items-center justify-between">
                     <div className="flex flex-wrap gap-2">
                       {order.admin_revision_requested && !order.is_canceled && (
-                        <span className="inline-flex rounded-md bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 ring-1 ring-rose-200">
+                        <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
                           수정 요청
                         </span>
                       )}
@@ -478,7 +467,7 @@ export default function OrdersPage() {
 
                     <button
                       onClick={() => goToOrderDetail(order.id)}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                     >
                       상세 보기
                     </button>
@@ -487,7 +476,7 @@ export default function OrdersPage() {
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
     </main>
   )

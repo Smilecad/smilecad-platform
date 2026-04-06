@@ -1,99 +1,77 @@
-'use client';
+'use client'
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 const supabase = createClient()
 
-type AuthMode = 'login' | 'signup';
+type AuthMode = 'login' | 'signup'
 
 type ProfileRow = {
-  id: string;
-  role: string;
-  clinic_name: string | null;
-  clinic_address?: string | null;
-  clinic_phone?: string | null;
-};
+  id: string
+  role: string
+  clinic_name: string | null
+  clinic_address?: string | null
+  clinic_phone?: string | null
+}
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter()
 
-  const [mode, setMode] = useState<AuthMode>('login');
-  const [loading, setLoading] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [message, setMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [mode, setMode] = useState<AuthMode>('login')
+  const [loading, setLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
+  const [message, setMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
 
-  const [signupClinicName, setSignupClinicName] = useState('');
-  const [signupClinicAddress, setSignupClinicAddress] = useState('');
-  const [signupClinicPhone, setSignupClinicPhone] = useState('');
-  const [signupEmail, setSignupEmail] = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [signupPasswordConfirm, setSignupPasswordConfirm] = useState('');
+  const [signupClinicName, setSignupClinicName] = useState('')
+  const [signupClinicAddress, setSignupClinicAddress] = useState('')
+  const [signupClinicPhone, setSignupClinicPhone] = useState('')
+  const [signupEmail, setSignupEmail] = useState('')
+  const [signupPassword, setSignupPassword] = useState('')
+  const [signupPasswordConfirm, setSignupPasswordConfirm] = useState('')
 
   useEffect(() => {
     const checkSession = async () => {
-      setPageLoading(true);
+      setPageLoading(true)
 
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await supabase.auth.getSession()
 
       if (session?.user) {
-        router.replace('/dashboard');
-        return;
+        router.replace('/dashboard')
+        return
       }
 
-      setPageLoading(false);
-    };
+      setPageLoading(false)
+    }
 
-    checkSession();
-  }, [router]);
-
-  const serviceFeatures = useMemo(
-    () => [
-      {
-        title: '빠른 주문 접수',
-        description: '환자 정보, 제품 정보, 스캔 파일 업로드를 단계별로 간편하게 입력합니다.',
-      },
-      {
-        title: '진행 상태 한눈에 확인',
-        description: '접수 대기, 디자인 작업중, 배송중 상태를 플랫폼에서 바로 확인할 수 있습니다.',
-      },
-      {
-        title: '주문 파일 체계적 관리',
-        description: '주문번호 기준으로 파일과 접수 내역을 정리해 누락 없이 관리할 수 있습니다.',
-      },
-      {
-        title: '치과/관리자 권한 분리',
-        description: '치과와 관리자 기능을 분리하여 안전하고 명확하게 운영할 수 있습니다.',
-      },
-    ],
-    []
-  );
+    checkSession()
+  }, [router])
 
   const resetMessages = () => {
-    setMessage('');
-    setErrorMessage('');
-  };
+    setMessage('')
+    setErrorMessage('')
+  }
 
   const ensureProfileAfterLogin = async (userId: string, email: string) => {
     const { data: existingProfile, error: profileFetchError } = await supabase
       .from('profiles')
       .select('id, role, clinic_name, clinic_address, clinic_phone')
       .eq('id', userId)
-      .maybeSingle<ProfileRow>();
+      .maybeSingle<ProfileRow>()
 
     if (profileFetchError) {
-      throw new Error(profileFetchError.message);
+      throw new Error(profileFetchError.message)
     }
 
     if (!existingProfile) {
-      const fallbackClinicName = email.split('@')[0] || '치과';
+      const fallbackClinicName = email.split('@')[0] || '치과'
 
       const { error: insertProfileError } = await supabase.from('profiles').insert({
         id: userId,
@@ -101,107 +79,107 @@ export default function LoginPage() {
         clinic_name: fallbackClinicName,
         clinic_address: '',
         clinic_phone: '',
-      });
+      })
 
       if (insertProfileError) {
-        throw new Error(insertProfileError.message);
+        throw new Error(insertProfileError.message)
       }
     }
-  };
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    resetMessages();
+    e.preventDefault()
+    resetMessages()
 
     if (!loginEmail.trim() || !loginPassword.trim()) {
-      setErrorMessage('이메일과 비밀번호를 입력해주세요.');
-      return;
+      setErrorMessage('이메일과 비밀번호를 입력해주세요.')
+      return
     }
 
     try {
-      setLoading(true);
+      setLoading(true)
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail.trim(),
         password: loginPassword,
-      });
+      })
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error(error.message)
       }
 
-      const user = data.user;
+      const user = data.user
       if (!user) {
-        throw new Error('로그인 사용자 정보를 확인할 수 없습니다.');
+        throw new Error('로그인 사용자 정보를 확인할 수 없습니다.')
       }
 
-      await ensureProfileAfterLogin(user.id, user.email ?? loginEmail.trim());
+      await ensureProfileAfterLogin(user.id, user.email ?? loginEmail.trim())
 
-      setMessage('로그인되었습니다. 대시보드로 이동합니다.');
-      router.replace('/dashboard');
+      setMessage('로그인되었습니다. 대시보드로 이동합니다.')
+      router.replace('/dashboard')
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+        error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.'
+      setErrorMessage(message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    resetMessages();
+    e.preventDefault()
+    resetMessages()
 
     if (!signupClinicName.trim()) {
-      setErrorMessage('치과명을 입력해주세요.');
-      return;
+      setErrorMessage('치과명을 입력해주세요.')
+      return
     }
 
     if (!signupClinicAddress.trim()) {
-      setErrorMessage('치과 주소를 입력해주세요.');
-      return;
+      setErrorMessage('치과 주소를 입력해주세요.')
+      return
     }
 
     if (!signupClinicPhone.trim()) {
-      setErrorMessage('연락처를 입력해주세요.');
-      return;
+      setErrorMessage('연락처를 입력해주세요.')
+      return
     }
 
     if (!signupEmail.trim()) {
-      setErrorMessage('이메일을 입력해주세요.');
-      return;
+      setErrorMessage('이메일을 입력해주세요.')
+      return
     }
 
     if (!signupPassword.trim()) {
-      setErrorMessage('비밀번호를 입력해주세요.');
-      return;
+      setErrorMessage('비밀번호를 입력해주세요.')
+      return
     }
 
     if (signupPassword.length < 6) {
-      setErrorMessage('비밀번호는 6자 이상으로 입력해주세요.');
-      return;
+      setErrorMessage('비밀번호는 6자 이상으로 입력해주세요.')
+      return
     }
 
     if (signupPassword !== signupPasswordConfirm) {
-      setErrorMessage('비밀번호 확인이 일치하지 않습니다.');
-      return;
+      setErrorMessage('비밀번호 확인이 일치하지 않습니다.')
+      return
     }
 
     try {
-      setLoading(true);
+      setLoading(true)
 
       const { data, error } = await supabase.auth.signUp({
         email: signupEmail.trim(),
         password: signupPassword,
-      });
+      })
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error(error.message)
       }
 
-      const user = data.user;
+      const user = data.user
       if (!user) {
-        throw new Error('회원가입 사용자 정보를 확인할 수 없습니다.');
+        throw new Error('회원가입 사용자 정보를 확인할 수 없습니다.')
       }
 
       const { error: profileUpsertError } = await supabase.from('profiles').upsert({
@@ -210,31 +188,31 @@ export default function LoginPage() {
         clinic_name: signupClinicName.trim(),
         clinic_address: signupClinicAddress.trim(),
         clinic_phone: signupClinicPhone.trim(),
-      });
+      })
 
       if (profileUpsertError) {
-        throw new Error(profileUpsertError.message);
+        throw new Error(profileUpsertError.message)
       }
 
       setMessage(
         '회원가입이 완료되었습니다. 이메일 인증을 사용하는 경우 인증 후 로그인해주세요.'
-      );
+      )
 
-      setSignupClinicName('');
-      setSignupClinicAddress('');
-      setSignupClinicPhone('');
-      setSignupEmail('');
-      setSignupPassword('');
-      setSignupPasswordConfirm('');
-      setMode('login');
+      setSignupClinicName('')
+      setSignupClinicAddress('')
+      setSignupClinicPhone('')
+      setSignupEmail('')
+      setSignupPassword('')
+      setSignupPasswordConfirm('')
+      setMode('login')
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+        error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.'
+      setErrorMessage(message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   if (pageLoading) {
     return (
@@ -243,58 +221,64 @@ export default function LoginPage() {
           페이지를 불러오는 중입니다...
         </div>
       </main>
-    );
+    )
   }
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.12)] lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.24),_transparent_30%),linear-gradient(135deg,#0f172a_0%,#0b1f4d_45%,#0f172a_100%)] px-6 py-8 text-white md:px-10 md:py-10 lg:px-12 lg:py-12">
+        <section className="relative overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.22),_transparent_30%),linear-gradient(135deg,#0f172a_0%,#0b1f4d_45%,#0f172a_100%)] px-6 py-8 text-white md:px-10 md:py-10 lg:px-12 lg:py-12">
           <div className="absolute inset-0 bg-[linear-gradient(to_bottom_right,rgba(255,255,255,0.04),transparent,rgba(255,255,255,0.02))]" />
-          <div className="relative flex h-full flex-col">
-            <div className="inline-flex w-fit items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur-sm">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-xl font-bold shadow-lg shadow-blue-500/30">
-                S
-              </div>
-              <div>
-                <p className="text-2xl font-bold tracking-tight">SmileCAD Platform</p>
-                <p className="text-sm text-slate-200">
-                  교정유지장치 주문 · 진행상태 · 파일관리 플랫폼
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-10 max-w-xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.35em] text-blue-300">
-                Digital Orthodontic Workflow
-              </p>
-              <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">
-                치과 주문 접수를
-                <br />
-                더 빠르고 정확하게
-              </h1>
-              <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">
-                SmileCAD Platform은 교정유지장치 주문 접수부터 진행 상태 확인,
-                스캔 파일 관리까지 한 번에 연결하는 치과 전용 주문 플랫폼입니다.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-4">
-              {serviceFeatures.map((feature) => (
-                <div
-                  key={feature.title}
-                  className="rounded-2xl border border-white/10 bg-white/8 px-5 py-5 backdrop-blur-sm"
-                >
-                  <p className="text-lg font-semibold">{feature.title}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-200">
-                    {feature.description}
+          <div className="relative flex h-full flex-col justify-between">
+            <div>
+              <div className="inline-flex w-fit items-center gap-3 rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500 text-xl font-bold shadow-lg shadow-blue-500/30">
+                  S
+                </div>
+                <div>
+                  <p className="text-2xl font-bold tracking-tight">SmileCAD Platform</p>
+                  <p className="text-sm text-slate-200">
+                    교정유지장치 주문 · 진행상태 · 파일관리 플랫폼
                   </p>
                 </div>
-              ))}
+              </div>
+
+              <div className="mt-12 max-w-xl">
+                <p className="text-sm font-semibold uppercase tracking-[0.35em] text-blue-300">
+                  Digital Orthodontic Workflow
+                </p>
+                <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">
+                  치과 주문 접수를
+                  <br />
+                  더 빠르고 정확하게
+                </h1>
+                <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">
+                  주문 접수부터 진행 상태 확인, 스캔 파일 관리와 디자인 파일 전달까지
+                  한 화면에서 간편하게 관리할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="mt-10 grid gap-3">
+                {[
+                  '주문 접수와 상세 확인을 빠르게',
+                  '진행 상태를 한눈에 확인',
+                  '스캔 / 디자인 파일을 체계적으로 관리',
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border border-white/10 bg-white/8 px-5 py-4 backdrop-blur-sm"
+                  >
+                    <p className="text-sm font-semibold text-slate-100">
+                      <span className="mr-2 text-blue-300">✔</span>
+                      {item}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="mt-auto pt-10 text-sm text-slate-300">
-              <p>정확한 주문 접수, 명확한 상태 관리, 체계적인 파일 운영</p>
+            <div className="mt-10 text-sm text-slate-300">
+              정확한 주문 접수, 명확한 상태 관리, 체계적인 파일 운영
             </div>
           </div>
         </section>
@@ -319,8 +303,8 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
-                  resetMessages();
-                  setMode('login');
+                  resetMessages()
+                  setMode('login')
                 }}
                 className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
                   mode === 'login'
@@ -333,8 +317,8 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
-                  resetMessages();
-                  setMode('signup');
+                  resetMessages()
+                  setMode('signup')
                 }}
                 className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
                   mode === 'signup'
@@ -401,8 +385,8 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      resetMessages();
-                      setMode('signup');
+                      resetMessages()
+                      setMode('signup')
                     }}
                     className="font-semibold text-blue-600 hover:text-blue-700"
                   >
@@ -501,21 +485,13 @@ export default function LoginPage() {
                   {loading ? '회원가입 처리 중...' : '회원가입'}
                 </button>
 
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-800">
-                  <p className="font-semibold">안내</p>
-                  <p className="mt-1">
-                    기본 가입 계정은 치과 계정으로 생성됩니다. 관리자 계정이 필요한 경우
-                    가입 후 Supabase에서 role을 admin으로 변경해주세요.
-                  </p>
-                </div>
-
                 <div className="pt-1 text-center text-sm text-slate-500">
                   이미 계정이 있으신가요?{' '}
                   <button
                     type="button"
                     onClick={() => {
-                      resetMessages();
-                      setMode('login');
+                      resetMessages()
+                      setMode('login')
                     }}
                     className="font-semibold text-blue-600 hover:text-blue-700"
                   >
@@ -528,5 +504,5 @@ export default function LoginPage() {
         </section>
       </div>
     </main>
-  );
+  )
 }

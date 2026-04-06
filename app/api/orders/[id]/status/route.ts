@@ -8,7 +8,7 @@ type RouteContext = {
 
 const ALLOWED_STATUSES = ['접수 대기', '디자인 작업중', '배송중'] as const;
 
-export async function POST(request: Request, context: RouteContext) {
+export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const { profile } = await getAuthenticatedServerUser(request);
@@ -32,7 +32,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
-      .select('id, is_canceled')
+      .select('id, is_canceled, status')
       .eq('id', id)
       .single();
 
@@ -50,21 +50,26 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const { error: updateError } = await supabaseAdmin
+    const { data: updatedOrder, error: updateError } = await supabaseAdmin
       .from('orders')
       .update({
         status,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id, status')
+      .single();
 
-    if (updateError) {
+    if (updateError || !updatedOrder) {
       return NextResponse.json(
-        { error: updateError.message },
+        { error: updateError?.message || '주문 상태 변경에 실패했습니다.' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      order: updatedOrder,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : '주문 상태 변경 중 오류가 발생했습니다.';

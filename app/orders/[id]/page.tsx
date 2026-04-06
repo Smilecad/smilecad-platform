@@ -1,980 +1,1089 @@
-'use client';
+'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 const supabase = createClient()
 
-type ProfileData = {
-  id: string;
-  role: 'admin' | 'clinic';
-  clinic_name: string | null;
-};
-
-type OrderData = {
-  id: string;
-  order_number: string;
-  clinic_name: string;
-  patient_name: string;
-  gender: string;
-  birth_date: string;
-  product_type: string;
-  selected_teeth: string[] | null;
-  delivery_date: string;
-  thickness: string;
-  jig_required: string;
-  request_note: string | null;
-  scan_file_names: string[] | null;
-  scan_file_paths: string[] | null;
-  design_file_names: string[] | null;
-  design_file_paths: string[] | null;
-  status: '접수 대기' | '디자인 작업중' | '배송중';
-  created_at: string;
-  user_id: string;
-  user_role: string;
-  is_canceled: boolean;
-  canceled_at: string | null;
-  canceled_by: string | null;
-  cancel_reason: string | null;
-  admin_revision_requested: boolean | null;
-  admin_revision_requested_at: string | null;
-  admin_revision_request_note: string | null;
-  admin_revision_requested_by: string | null;
-};
-
-const ORDER_STATUSES: Array<OrderData['status']> = ['접수 대기', '디자인 작업중', '배송중'];
-
-function formatDate(dateString?: string | null) {
-  if (!dateString) return '-';
-
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return dateString;
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
+type Profile = {
+  id: string
+  role: 'admin' | 'clinic'
+  clinic_name: string | null
+  clinic_address: string | null
+  clinic_phone: string | null
 }
 
-function formatDateOnly(dateString?: string | null) {
-  if (!dateString) return '-';
-  return dateString;
+type OrderItem = {
+  id: string
+  order_number: string
+  clinic_name: string
+  patient_name: string
+  gender: string
+  birth_date: string | null
+  product_type: string
+  selected_teeth: string[] | string | null
+  delivery_date: string | null
+  thickness: string | null
+  jig_required: string | null
+  request_note: string | null
+  scan_file_names: string[] | string | null
+  scan_file_paths: string[] | string | null
+  design_file_names: string[] | string | null
+  design_file_paths: string[] | string | null
+  status: '접수 대기' | '디자인 작업중' | '배송중'
+  created_at: string
+  user_id: string
+  user_role: string
+  is_canceled: boolean
+  canceled_at: string | null
+  canceled_by: string | null
+  cancel_reason: string | null
+  admin_revision_requested: boolean
+  admin_revision_requested_at: string | null
+  admin_revision_request_note: string | null
+  admin_revision_requested_by: string | null
 }
 
-function safeArray(value: string[] | null | undefined) {
-  if (!Array.isArray(value)) return [];
-  return value;
+type FileItem = {
+  name: string
+  path: string
 }
 
-function getSafeFileName(name: string) {
-  return name.replace(/[^\w.\-]/g, '_').toLowerCase();
+type ApiResult = {
+  error?: string
+  success?: boolean
+  url?: string
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string')
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+
+    if (!trimmed) {
+      return []
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed)
+
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === 'string')
+      }
+    } catch {
+      return [trimmed]
+    }
+
+    return [trimmed]
+  }
+
+  return []
+}
+
+async function parseJsonSafe(response: Response): Promise<ApiResult> {
+  const text = await response.text()
+
+  if (!text) {
+    return {}
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return {}
+  }
 }
 
 export default function OrderDetailPage() {
-  const router = useRouter();
-  const params = useParams();
-  const orderId = params?.id as string;
+  const router = useRouter()
+  const params = useParams()
+  const orderId = params?.id as string
 
-  const designFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [order, setOrder] = useState<OrderItem | null>(null)
 
-  const [pageLoading, setPageLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [uploadingDesignFiles, setUploadingDesignFiles] = useState(false);
-  const [sendingRevisionRequest, setSendingRevisionRequest] = useState(false);
-  const [cancelingOrder, setCancelingOrder] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [cancelLoading, setCancelLoading] = useState(false)
+  const [revisionLoading, setRevisionLoading] = useState(false)
+  const [uploadingDesign, setUploadingDesign] = useState(false)
+  const [downloadingAllScan, setDownloadingAllScan] = useState(false)
 
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [orderData, setOrderData] = useState<OrderData | null>(null);
+  const [cancelReason, setCancelReason] = useState('')
+  const [revisionNote, setRevisionNote] = useState('')
 
-  const [statusMessage, setStatusMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<OrderData['status']>('접수 대기');
-  const [revisionRequestNote, setRevisionRequestNote] = useState('');
-  const [cancelReason, setCancelReason] = useState('');
-  const [notificationCount, setNotificationCount] = useState(0);
+  const [dragActive, setDragActive] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    const initializePage = async () => {
+    let isMounted = true
+
+    const loadPage = async () => {
       try {
-        setPageLoading(true);
-        setStatusMessage('');
-        setErrorMessage('');
+        setLoading(true)
+        setError('')
 
         const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
 
-        if (sessionError) {
-          throw new Error(sessionError.message);
+        if (userError || !user) {
+          router.replace('/login')
+          return
         }
 
-        if (!session?.user) {
-          router.replace('/login');
-          return;
-        }
-
-        const user = session.user;
-
-        const { data: profile, error: profileError } = await supabase
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, role, clinic_name')
+          .select('id, role, clinic_name, clinic_address, clinic_phone')
           .eq('id', user.id)
-          .single();
+          .single()
 
-        if (profileError) {
-          throw new Error(profileError.message);
+        if (profileError || !profileData) {
+          setError('프로필 정보를 불러오지 못했습니다.')
+          return
         }
 
-        const typedProfile = profile as ProfileData;
-        setProfileData(typedProfile);
-
-        let orderQuery = supabase.from('orders').select('*').eq('id', orderId);
-
-        if (typedProfile.role !== 'admin') {
-          orderQuery = orderQuery.eq('user_id', user.id);
-        }
-
-        const { data: order, error: orderError } = await orderQuery.single();
-
-        if (orderError) {
-          throw new Error('주문 정보를 불러오지 못했습니다.');
-        }
-
-        const typedOrder = order as OrderData;
-        setOrderData(typedOrder);
-        setSelectedStatus(typedOrder.status);
-        setRevisionRequestNote(typedOrder.admin_revision_request_note ?? '');
-
-        let notificationQuery = supabase
+        const { data: orderData, error: orderError } = await supabase
           .from('orders')
-          .select('id', { count: 'exact', head: true })
-          .eq('admin_revision_requested', true)
-          .eq('is_canceled', false);
+          .select(`
+            id,
+            order_number,
+            clinic_name,
+            patient_name,
+            gender,
+            birth_date,
+            product_type,
+            selected_teeth,
+            delivery_date,
+            thickness,
+            jig_required,
+            request_note,
+            scan_file_names,
+            scan_file_paths,
+            design_file_names,
+            design_file_paths,
+            status,
+            created_at,
+            user_id,
+            user_role,
+            is_canceled,
+            canceled_at,
+            canceled_by,
+            cancel_reason,
+            admin_revision_requested,
+            admin_revision_requested_at,
+            admin_revision_request_note,
+            admin_revision_requested_by
+          `)
+          .eq('id', orderId)
+          .single()
 
-        if (typedProfile.role !== 'admin') {
-          notificationQuery = notificationQuery.eq('user_id', user.id);
+        if (orderError || !orderData) {
+          setError('주문 정보를 불러오지 못했습니다.')
+          return
         }
 
-        const { count, error: notificationError } = await notificationQuery;
-
-        if (notificationError) {
-          throw new Error(notificationError.message);
+        if (!isMounted) return
+        setProfile(profileData as Profile)
+        setOrder(orderData as OrderItem)
+        setRevisionNote(orderData.admin_revision_request_note || '')
+      } catch (err) {
+        console.error(err)
+        if (isMounted) {
+          setError('주문 상세 로딩 중 오류가 발생했습니다.')
         }
-
-        setNotificationCount(count ?? 0);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : '페이지를 불러오는 중 오류가 발생했습니다.';
-        setErrorMessage(message);
       } finally {
-        setPageLoading(false);
+        if (isMounted) {
+          setLoading(false)
+        }
       }
-    };
+    }
 
     if (orderId) {
-      initializePage();
+      loadPage()
     }
-  }, [orderId, router]);
 
-  const isAdmin = profileData?.role === 'admin';
-  const isClinic = profileData?.role === 'clinic';
-  const canDownloadDesignFiles = !!profileData;
-  const canUploadDesignFiles = !!profileData;
+    return () => {
+      isMounted = false
+    }
+  }, [orderId, router])
+
+  const isAdmin = profile?.role === 'admin'
+  const isOwnerClinic = !!profile && !!order && profile.id === order.user_id
+  const canUploadDesign = !!order && (isAdmin || isOwnerClinic)
+  const canDownloadDesign = !!order && (isAdmin || isOwnerClinic)
+  const canDownloadScan = !!order && isAdmin
+
+  const designFiles = useMemo<FileItem[]>(() => {
+    if (!order) return []
+
+    const names = normalizeStringArray(order.design_file_names)
+    const paths = normalizeStringArray(order.design_file_paths)
+
+    return paths.map((path, index) => ({
+      name: names[index] || `design-file-${index + 1}`,
+      path,
+    }))
+  }, [order])
+
+  const scanFiles = useMemo<FileItem[]>(() => {
+    if (!order) return []
+
+    const names = normalizeStringArray(order.scan_file_names)
+    const paths = normalizeStringArray(order.scan_file_paths)
+
+    return paths.map((path, index) => ({
+      name: names[index] || `scan-file-${index + 1}`,
+      path,
+    }))
+  }, [order])
 
   const selectedTeethText = useMemo(() => {
-    if (!orderData) return '-';
+    if (!order) return '-'
 
-    const teeth = safeArray(orderData.selected_teeth);
-    if (teeth.length === 0) return '-';
+    const teeth = normalizeStringArray(order.selected_teeth)
+    return teeth.length > 0 ? teeth.join(', ') : '-'
+  }, [order])
 
-    return teeth.join(', ');
-  }, [orderData]);
+  const formatDateTime = (value: string | null) => {
+    if (!value) return '-'
 
-  const scanFileNames = safeArray(orderData?.scan_file_names);
-  const scanFilePaths = safeArray(orderData?.scan_file_paths);
-  const designFileNames = safeArray(orderData?.design_file_names);
-  const designFilePaths = safeArray(orderData?.design_file_paths);
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
 
-  const canCancelOrder = useMemo(() => {
-    if (!orderData || !profileData) return false;
-    if (orderData.is_canceled) return false;
-    if (isAdmin) return true;
-    if (isClinic && orderData.user_id === profileData.id && orderData.status === '접수 대기') {
-      return true;
+    return new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)
+  }
+
+  const formatDate = (value: string | null) => {
+    if (!value) return '-'
+
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '-'
+
+    return new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+  }
+
+  const safeFileName = (name: string) => {
+    return name.replace(/[^\w.\-]/g, '_').toLowerCase()
+  }
+
+  const refreshOrder = async () => {
+    if (!orderId) return
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        order_number,
+        clinic_name,
+        patient_name,
+        gender,
+        birth_date,
+        product_type,
+        selected_teeth,
+        delivery_date,
+        thickness,
+        jig_required,
+        request_note,
+        scan_file_names,
+        scan_file_paths,
+        design_file_names,
+        design_file_paths,
+        status,
+        created_at,
+        user_id,
+        user_role,
+        is_canceled,
+        canceled_at,
+        canceled_by,
+        cancel_reason,
+        admin_revision_requested,
+        admin_revision_requested_at,
+        admin_revision_request_note,
+        admin_revision_requested_by
+      `)
+      .eq('id', orderId)
+      .single()
+
+    if (!error && data) {
+      setOrder(data as OrderItem)
+      setRevisionNote(data.admin_revision_request_note || '')
     }
-    return false;
-  }, [orderData, profileData, isAdmin, isClinic]);
+  }
 
-  const resetMessages = () => {
-    setStatusMessage('');
-    setErrorMessage('');
-  };
+  const handleDownload = async (filePath: string, type: 'scan' | 'design') => {
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
 
-  const getAccessToken = async () => {
+      if (sessionError || !session?.access_token) {
+        alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
+        return
+      }
+
+      const res = await fetch(
+        `/api/files/download?orderId=${orderId}&filePath=${encodeURIComponent(filePath)}&type=${type}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      )
+
+      const data = await parseJsonSafe(res)
+
+      if (!res.ok) {
+        alert(data.error || '다운로드에 실패했습니다.')
+        return
+      }
+
+      if (!data.url) {
+        alert('다운로드 URL을 받지 못했습니다.')
+        return
+      }
+
+      window.open(data.url, '_blank')
+    } catch (err) {
+      console.error(err)
+      alert('다운로드 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleDownloadAllScan = async () => {
+    if (!order || !canDownloadScan) return
+
+    try {
+      setDownloadingAllScan(true)
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      if (sessionError || !session?.access_token) {
+        alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
+        return
+      }
+
+      const res = await fetch(
+        `/api/files/download?orderId=${order.id}&type=scan&mode=all`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      )
+
+      if (!res.ok) {
+        const data = await parseJsonSafe(res)
+        alert(data.error || '전체 다운로드에 실패했습니다.')
+        return
+      }
+
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${order.order_number}-scan-files.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      alert('전체 다운로드 중 오류가 발생했습니다.')
+    } finally {
+      setDownloadingAllScan(false)
+    }
+  }
+
+  const handleStatusChange = async (
+  nextStatus: '접수 대기' | '디자인 작업중' | '배송중'
+) => {
+  if (!isAdmin || !order) return
+
+  try {
+    setStatusLoading(true)
+
     const {
       data: { session },
-      error,
-    } = await supabase.auth.getSession();
+      error: sessionError,
+    } = await supabase.auth.getSession()
 
-    if (error) {
-      throw new Error(error.message);
+    if (sessionError || !session?.access_token) {
+      alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
+      return
     }
 
-    const token = session?.access_token;
-
-    if (!token) {
-      throw new Error('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.');
-    }
-
-    return token;
-  };
-
-  const callSecureOrderApi = async (
-    url: string,
-    body: Record<string, unknown> = {}
-  ) => {
-    const accessToken = await getAccessToken();
-
-    const response = await fetch(url, {
-      method: 'POST',
+    const res = await fetch(`/api/orders/${order.id}/status`, {
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(body),
-    });
+      body: JSON.stringify({
+        status: nextStatus,
+      }),
+    })
 
-    const json = await response.json().catch(() => ({}));
+    const data = await parseJsonSafe(res)
 
-    if (!response.ok) {
-      throw new Error(json?.error || '요청 처리 중 오류가 발생했습니다.');
+    if (!res.ok) {
+      alert(data.error || '상태 변경에 실패했습니다.')
+      return
     }
 
-    return json;
-  };
+    await refreshOrder()
+    alert('주문 상태가 변경되었습니다.')
+  } catch (err) {
+    console.error(err)
+    alert('상태 변경 중 오류가 발생했습니다.')
+  } finally {
+    setStatusLoading(false)
+  }
+}
 
-  const refreshOrderData = async () => {
-    if (!orderId || !profileData) return;
-
-    let query = supabase.from('orders').select('*').eq('id', orderId);
-
-    if (profileData.role !== 'admin') {
-      query = query.eq('user_id', profileData.id);
-    }
-
-    const { data, error } = await query.single();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const typedOrder = data as OrderData;
-    setOrderData(typedOrder);
-    setSelectedStatus(typedOrder.status);
-    setRevisionRequestNote(typedOrder.admin_revision_request_note ?? '');
-
-    let notificationQuery = supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('admin_revision_requested', true)
-      .eq('is_canceled', false);
-
-    if (profileData.role !== 'admin') {
-      notificationQuery = notificationQuery.eq('user_id', profileData.id);
-    }
-
-    const { count } = await notificationQuery;
-    setNotificationCount(count ?? 0);
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  };
-
-  const handleChangeStatus = async () => {
-    if (!isAdmin || !orderData) return;
+  const handleRevisionRequest = async () => {
+    if (!isAdmin || !order) return
 
     try {
-      resetMessages();
-      setActionLoading(true);
+      setRevisionLoading(true)
 
-      await callSecureOrderApi(`/api/orders/${orderData.id}/status`, {
-        status: selectedStatus,
-      });
+      const res = await fetch(`/api/orders/${order.id}/revision-request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          note: revisionNote,
+        }),
+      })
 
-      await refreshOrderData();
-      setStatusMessage('주문 상태가 변경되었습니다.');
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '상태 변경 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+      const data = await parseJsonSafe(res)
+
+      if (!res.ok) {
+        alert(data.error || '수정 요청 등록에 실패했습니다.')
+        return
+      }
+
+      await refreshOrder()
+      alert('수정 요청이 등록되었습니다.')
+    } catch (err) {
+      console.error(err)
+      alert('수정 요청 처리 중 오류가 발생했습니다.')
     } finally {
-      setActionLoading(false);
+      setRevisionLoading(false)
     }
-  };
-
-  const handleSendRevisionRequest = async () => {
-    if (!isAdmin || !orderData) return;
-
-    try {
-      resetMessages();
-      setSendingRevisionRequest(true);
-
-      await callSecureOrderApi(`/api/orders/${orderData.id}/revision-request`, {
-        note: revisionRequestNote.trim(),
-      });
-
-      await refreshOrderData();
-      setStatusMessage('주문 수정 요청이 등록되었습니다.');
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '주문 수정 요청 등록 중 오류가 발생했습니다.';
-      setErrorMessage(message);
-    } finally {
-      setSendingRevisionRequest(false);
-    }
-  };
+  }
 
   const handleCancelOrder = async () => {
-    if (!orderData || !profileData || !canCancelOrder) return;
-
-    const confirmed = window.confirm('이 주문을 취소하시겠습니까?');
-    if (!confirmed) return;
+    if (!order) return
 
     try {
-      resetMessages();
-      setCancelingOrder(true);
+      setCancelLoading(true)
 
-      await callSecureOrderApi(`/api/orders/${orderData.id}/cancel`, {
-        cancel_reason: cancelReason.trim(),
-      });
+      const res = await fetch(`/api/orders/${order.id}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reason: cancelReason,
+        }),
+      })
 
-      await refreshOrderData();
-      setStatusMessage('주문이 취소되었습니다.');
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '주문 취소 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+      const data = await parseJsonSafe(res)
+
+      if (!res.ok) {
+        alert(data.error || '주문 취소에 실패했습니다.')
+        return
+      }
+
+      await refreshOrder()
+      alert('주문이 취소되었습니다.')
+    } catch (err) {
+      console.error(err)
+      alert('주문 취소 중 오류가 발생했습니다.')
     } finally {
-      setCancelingOrder(false);
+      setCancelLoading(false)
     }
-  };
+  }
 
-  const handleDownloadFile = async (filePath: string, fileName: string) => {
-    try {
-      resetMessages();
+  const setFilesFromInput = (files: FileList | null) => {
+    if (!files) return
 
-      const { data, error } = await supabase.storage
-        .from('order-files')
-        .createSignedUrl(filePath, 60);
+    const nextFiles = Array.from(files).filter((file) => {
+      const lower = file.name.toLowerCase()
+      return lower.endsWith('.stl') || lower.endsWith('.zip')
+    })
 
-      if (error || !data?.signedUrl) {
-        throw new Error(error?.message || '다운로드 URL 생성에 실패했습니다.');
+    if (nextFiles.length === 0) {
+      alert('STL 또는 ZIP 파일만 업로드할 수 있습니다.')
+      return
+    }
+
+    setSelectedFiles((prev) => {
+      const merged = [...prev]
+
+      for (const file of nextFiles) {
+        const alreadyExists = merged.some(
+          (existing) => existing.name === file.name && existing.size === file.size
+        )
+
+        if (!alreadyExists) {
+          merged.push(file)
+        }
       }
 
-      const response = await fetch(data.signedUrl);
+      return merged
+    })
+  }
 
-      if (!response.ok) {
-        throw new Error('파일 다운로드에 실패했습니다.');
-      }
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setFilesFromInput(e.target.files)
 
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '파일 다운로드 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
-  };
+  }
 
-  const handleDownloadAllFiles = async (filePaths: string[], fileNames: string[]) => {
-    if (filePaths.length === 0) return;
+  const handleFileRemove = (targetIndex: number) => {
+    setSelectedFiles((prev) => prev.filter((_, index) => index !== targetIndex))
+  }
 
-    for (let i = 0; i < filePaths.length; i += 1) {
-      const path = filePaths[i];
-      const name = fileNames[i] || `file_${i + 1}`;
-      await handleDownloadFile(path, name);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    setFilesFromInput(e.dataTransfer.files)
+  }
+
+  const handleDesignUpload = async () => {
+    if (!order || selectedFiles.length === 0) {
+      alert('업로드할 파일을 먼저 선택해주세요.')
+      return
     }
-  };
-
-  const handleUploadDesignFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canUploadDesignFiles || !orderData) return;
-
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
 
     try {
-      resetMessages();
-      setUploadingDesignFiles(true);
+      setUploadingDesign(true)
 
-      const uploadedNames: string[] = [];
-      const uploadedPaths: string[] = [];
+      const existingNames = normalizeStringArray(order.design_file_names)
+      const existingPaths = normalizeStringArray(order.design_file_paths)
 
-      for (const file of Array.from(files)) {
-        const safeName = getSafeFileName(file.name);
-        const filePath = `${orderData.order_number}/designed/${Date.now()}_${safeName}`;
+      const uploadedNames = [...existingNames]
+      const uploadedPaths = [...existingPaths]
+
+      for (const file of selectedFiles) {
+        const safeName = safeFileName(file.name)
+        const storagePath = `${order.order_number}/designed/${Date.now()}_${safeName}`
 
         const { error: uploadError } = await supabase.storage
           .from('order-files')
-          .upload(filePath, file, {
+          .upload(storagePath, file, {
             upsert: false,
-          });
+          })
 
         if (uploadError) {
-          throw new Error(uploadError.message);
+          alert(`파일 업로드 실패: ${file.name}`)
+          return
         }
 
-        uploadedNames.push(file.name);
-        uploadedPaths.push(filePath);
+        uploadedNames.push(file.name)
+        uploadedPaths.push(storagePath)
       }
 
-      const nextDesignFileNames = [...designFileNames, ...uploadedNames];
-      const nextDesignFilePaths = [...designFilePaths, ...uploadedPaths];
+      const res = await fetch(`/api/orders/${order.id}/design-files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          design_file_names: uploadedNames,
+          design_file_paths: uploadedPaths,
+        }),
+      })
 
-      await callSecureOrderApi(`/api/orders/${orderData.id}/design-files`, {
-        design_file_names: nextDesignFileNames,
-        design_file_paths: nextDesignFilePaths,
-      });
+      const data = await parseJsonSafe(res)
 
-      await refreshOrderData();
-      setStatusMessage(
-        isClinic
-          ? '디자인 파일이 업로드되었습니다. 수정 요청 상태도 해제되었습니다.'
-          : '디자인 파일이 업로드되었습니다.'
-      );
-
-      if (designFileInputRef.current) {
-        designFileInputRef.current.value = '';
+      if (!res.ok) {
+        alert(data.error || '디자인 파일 정보 저장에 실패했습니다.')
+        return
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '디자인 파일 업로드 중 오류가 발생했습니다.';
-      setErrorMessage(message);
+
+      setSelectedFiles([])
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+
+      await refreshOrder()
+      alert('디자인 파일 업로드가 완료되었습니다.')
+    } catch (err) {
+      console.error(err)
+      alert('디자인 파일 업로드 중 오류가 발생했습니다.')
     } finally {
-      setUploadingDesignFiles(false);
+      setUploadingDesign(false)
     }
-  };
-
-  if (pageLoading) {
-    return (
-      <main className="min-h-screen bg-slate-100 p-6">
-        <div className="mx-auto max-w-7xl rounded-3xl border border-slate-200 bg-white p-8 text-slate-600 shadow-sm">
-          주문 상세 정보를 불러오는 중입니다...
-        </div>
-      </main>
-    );
   }
 
-  if (!orderData || !profileData) {
+  const renderStatusBadge = () => {
+    if (!order) return null
+
+    if (order.is_canceled) {
+      return (
+        <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
+          주문 취소
+        </span>
+      )
+    }
+
+    if (order.status === '접수 대기') {
+      return (
+        <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+          접수 대기
+        </span>
+      )
+    }
+
+    if (order.status === '디자인 작업중') {
+      return (
+        <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
+          디자인 작업중
+        </span>
+      )
+    }
+
     return (
-      <main className="min-h-screen bg-slate-100 p-6">
-        <div className="mx-auto max-w-7xl rounded-3xl border border-red-200 bg-red-50 p-8 text-red-700 shadow-sm">
-          {errorMessage || '주문 정보를 찾을 수 없습니다.'}
-          <div className="mt-4">
-            <Link
-              href="/orders"
-              className="inline-flex rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-            >
-              주문목록으로 돌아가기
-            </Link>
-          </div>
+      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+        배송중
+      </span>
+    )
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
+        <div className="mx-auto max-w-7xl rounded-[28px] border border-slate-200 bg-white px-8 py-10 shadow-sm">
+          <p className="text-base text-slate-500">주문 상세를 불러오는 중입니다...</p>
         </div>
       </main>
-    );
+    )
+  }
+
+  if (error || !order || !profile) {
+    return (
+      <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
+        <div className="mx-auto max-w-7xl rounded-[28px] border border-red-200 bg-red-50 px-8 py-10 shadow-sm">
+          <p className="text-base font-medium text-red-600">
+            {error || '주문 정보를 표시할 수 없습니다.'}
+          </p>
+        </div>
+      </main>
+    )
   }
 
   return (
-    <main className="min-h-screen bg-slate-100">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="bg-[linear-gradient(180deg,#0f172a_0%,#0b1b49_100%)] px-5 py-8 text-white">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight">주문 상세</h1>
-            <p className="mt-2 text-base text-slate-300">
-              {isAdmin ? '관리자 계정' : '치과 계정'}
-            </p>
-          </div>
-
-          <div className="mt-10 space-y-3">
-            <Link
-              href="/dashboard"
-              className="block rounded-2xl bg-white/10 px-4 py-4 text-base font-semibold text-white transition hover:bg-white/15"
-            >
-              메인페이지로
-            </Link>
-
-            <Link
-              href="/orders"
-              className="block rounded-2xl bg-white/10 px-4 py-4 text-base font-semibold text-white transition hover:bg-white/15"
-            >
-              주문목록으로
-            </Link>
-
-            <Link
-              href="/orders/new"
-              className="block rounded-2xl bg-emerald-500 px-4 py-4 text-base font-semibold text-white transition hover:bg-emerald-600"
-            >
-              신규 주문 등록
-            </Link>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="block w-full rounded-2xl bg-red-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-red-700"
-            >
-              로그아웃
-            </button>
-          </div>
-        </aside>
-
-        <section className="px-4 py-6 md:px-8 lg:px-10">
-          <div className="mx-auto max-w-6xl">
-            <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white px-6 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-600">
-                  Header
-                </p>
-                <h2 className="mt-2 text-2xl font-bold text-slate-900">주문 상세 페이지</h2>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex items-center rounded-2xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                  {profileData.clinic_name || '계정'}
-                </div>
-
-                <Link
-                  href="/orders"
-                  className="inline-flex items-center rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-                >
-                  알림
-                  {notificationCount > 0 ? (
-                    <span className="ml-2 inline-flex min-w-6 justify-center rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
-                      {notificationCount}
-                    </span>
-                  ) : (
-                    <span className="ml-2 inline-flex min-w-6 justify-center rounded-full bg-slate-300 px-2 py-0.5 text-xs font-bold text-slate-700">
-                      0
-                    </span>
-                  )}
-                </Link>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-4xl font-bold tracking-tight text-slate-900">
-                    주문 상세 정보
-                  </h2>
-
-                  {orderData.admin_revision_requested ? (
-                    <span className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-                      수정 요청
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="mt-3 text-lg text-slate-600">
-                  주문번호: {orderData.order_number}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className={`inline-flex rounded-full px-5 py-2 text-sm font-semibold ${
-                    orderData.is_canceled
-                      ? 'bg-red-100 text-red-700'
-                      : orderData.status === '접수 대기'
-                        ? 'bg-blue-100 text-blue-700'
-                        : orderData.status === '디자인 작업중'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-emerald-100 text-emerald-700'
-                  }`}
-                >
-                  {orderData.is_canceled ? '주문 취소' : orderData.status}
-                </span>
-              </div>
-            </div>
-
-            {statusMessage ? (
-              <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {statusMessage}
-              </div>
-            ) : null}
-
-            {errorMessage ? (
-              <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {errorMessage}
-              </div>
-            ) : null}
-
-            {isClinic && orderData.admin_revision_requested ? (
-              <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-6 shadow-sm">
-                <h3 className="text-xl font-bold text-red-800">관리자 수정 요청</h3>
-                <p className="mt-3 text-sm text-red-700">
-                  파일이 다르거나 열리지 않는 경우 등으로 수정 요청이 등록되었습니다.
-                </p>
-                <div className="mt-4 rounded-2xl bg-white/70 px-4 py-4 text-sm text-red-800">
-                  <p className="font-semibold">요청 시간</p>
-                  <p className="mt-1">{formatDate(orderData.admin_revision_requested_at)}</p>
-
-                  <p className="mt-4 font-semibold">요청 메모</p>
-                  <p className="mt-1 whitespace-pre-wrap">
-                    {orderData.admin_revision_request_note?.trim()
-                      ? orderData.admin_revision_request_note
-                      : '별도 메모는 없습니다.'}
-                  </p>
-                </div>
-                <p className="mt-4 text-sm text-red-700">
-                  수정 파일을 다시 업로드하면 요청 상태가 자동으로 해제됩니다.
-                </p>
-              </div>
-            ) : null}
-
-            <div className="mt-8 grid gap-6 lg:grid-cols-2">
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-2xl font-bold text-slate-900">환자 정보</h3>
-                <div className="mt-6 space-y-4 text-base text-slate-700">
-                  <p>
-                    <span className="font-semibold text-slate-900">치과명:</span>{' '}
-                    {orderData.clinic_name}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">환자명:</span>{' '}
-                    {orderData.patient_name}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">성별:</span>{' '}
-                    {orderData.gender}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">생년월일:</span>{' '}
-                    {formatDateOnly(orderData.birth_date)}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">등록일:</span>{' '}
-                    {formatDate(orderData.created_at)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-2xl font-bold text-slate-900">제품 정보</h3>
-                <div className="mt-6 space-y-4 text-base text-slate-700">
-                  <p>
-                    <span className="font-semibold text-slate-900">제품:</span>{' '}
-                    {orderData.product_type}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">납기일:</span>{' '}
-                    {formatDateOnly(orderData.delivery_date)}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">두께:</span>{' '}
-                    {orderData.thickness}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">지그 제작:</span>{' '}
-                    {orderData.jig_required}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">치식:</span>{' '}
-                    {selectedTeethText}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-2xl font-bold text-slate-900">업로드 파일</h3>
-
-                {isAdmin && scanFilePaths.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadAllFiles(scanFilePaths, scanFileNames)}
-                    className="inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-                  >
-                    전체 파일 다운로드
-                  </button>
-                ) : null}
-              </div>
-
-              {!isAdmin ? (
-                <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                  스캔 원본 파일 다운로드는 관리자 계정에서만 가능합니다.
-                </div>
-              ) : null}
-
-              <div className="mt-6 space-y-3">
-                {scanFilePaths.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    업로드된 스캔 파일이 없습니다.
-                  </div>
-                ) : (
-                  scanFilePaths.map((filePath, index) => {
-                    const fileName = scanFileNames[index] || `scan_file_${index + 1}`;
-
-                    return (
-                      <div
-                        key={`${filePath}-${index}`}
-                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-base text-slate-800">{fileName}</p>
-                        </div>
-
-                        {isAdmin ? (
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadFile(filePath, fileName)}
-                            className="inline-flex shrink-0 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
-                          >
-                            개별 다운로드
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-900">디자인 파일</h3>
-                  <p className="mt-2 text-sm text-slate-500">
-                    관리자와 치과 모두 STL 또는 ZIP 파일을 업로드하고 다운로드할 수 있습니다.
-                  </p>
-                </div>
-
-                <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
-                  {canUploadDesignFiles ? (
-                    <input
-                      ref={designFileInputRef}
-                      type="file"
-                      accept=".stl,.zip,.STL,.ZIP"
-                      multiple
-                      onChange={handleUploadDesignFiles}
-                      className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-white hover:file:bg-slate-700"
-                      disabled={uploadingDesignFiles}
-                    />
-                  ) : null}
-
-                  {canDownloadDesignFiles && designFilePaths.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadAllFiles(designFilePaths, designFileNames)}
-                      className="inline-flex shrink-0 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
-                    >
-                      전체 다운로드
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              {isAdmin ? (
-                <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-700">
-                  관리자 계정은 디자인 STL 파일을 업로드하고 다운로드할 수 있습니다.
-                </div>
-              ) : isClinic ? (
-                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
-                  치과 계정도 디자인 STL 파일을 직접 업로드하고 다운로드할 수 있습니다.
-                </div>
-              ) : null}
-
-              {uploadingDesignFiles ? (
-                <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-                  디자인 파일 업로드 중입니다...
-                </div>
-              ) : null}
-
-              <div className="mt-6 space-y-3">
-                {designFilePaths.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    아직 업로드된 디자인 파일이 없습니다.
-                  </div>
-                ) : (
-                  designFilePaths.map((filePath, index) => {
-                    const fileName = designFileNames[index] || `design_file_${index + 1}`;
-
-                    return (
-                      <div
-                        key={`${filePath}-${index}`}
-                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-base text-slate-800">{fileName}</p>
-                        </div>
-
-                        {canDownloadDesignFiles ? (
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadFile(filePath, fileName)}
-                            className="inline-flex shrink-0 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
-                          >
-                            개별 다운로드
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {isAdmin ? (
-              <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-2xl font-bold text-slate-900">주문 수정 요청</h3>
-                <p className="mt-3 text-sm text-slate-500">
-                  파일이 다르거나 열리지 않는 경우 치과 측에 바로 수정 요청을 보낼 수 있습니다.
-                </p>
-
-                <div className="mt-6">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    요청 메모
-                  </label>
-                  <textarea
-                    value={revisionRequestNote}
-                    onChange={(e) => setRevisionRequestNote(e.target.value)}
-                    rows={4}
-                    placeholder="예: 상악 STL 파일이 열리지 않습니다. 파일 다시 확인 후 재업로드 부탁드립니다."
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleSendRevisionRequest}
-                    disabled={sendingRevisionRequest}
-                    className="inline-flex rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-amber-300"
-                  >
-                    {sendingRevisionRequest ? '요청 전송 중...' : '주문 수정 요청'}
-                  </button>
-
-                  {orderData.admin_revision_requested ? (
-                    <span className="text-sm text-slate-500">
-                      현재 수정 요청이 등록된 상태입니다. 마지막 요청 시간:{' '}
-                      {formatDate(orderData.admin_revision_requested_at)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-2xl font-bold text-slate-900">주문 취소</h3>
-              <p className="mt-3 text-sm text-slate-500">
-                관리자 계정은 언제든 취소할 수 있고, 치과 계정은 접수 대기 상태에서만 자기 주문을 취소할 수 있습니다.
+    <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 px-5 py-5 md:px-8 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-bold tracking-[0.2em] text-blue-600">
+                SMILECAD PLATFORM
               </p>
+              <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">
+                주문 상세
+              </h1>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span className="text-lg font-bold text-slate-900">{order.order_number}</span>
+                {renderStatusBadge()}
+                {order.admin_revision_requested && !order.is_canceled && (
+                  <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
+                    수정 요청
+                  </span>
+                )}
+              </div>
+            </div>
 
-              {orderData.is_canceled ? (
-                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
-                  이미 취소된 주문입니다.
-                  <div className="mt-2">
-                    취소 시간: {formatDate(orderData.canceled_at)} / 취소 주체:{' '}
-                    {orderData.canceled_by || '-'}
-                  </div>
-                  <div className="mt-1">취소 사유: {orderData.cancel_reason || '-'}</div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => router.push('/orders')}
+                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
+              >
+                주문 목록
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {isAdmin && (
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+              관리자 상태 변경
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              주문 상태를 빠르게 변경할 수 있습니다.
+            </p>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                onClick={() => handleStatusChange('접수 대기')}
+                disabled={statusLoading || order.is_canceled}
+                className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                접수 대기
+              </button>
+
+              <button
+                onClick={() => handleStatusChange('디자인 작업중')}
+                disabled={statusLoading || order.is_canceled}
+                className="rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-bold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                디자인 작업중
+              </button>
+
+              <button
+                onClick={() => handleStatusChange('배송중')}
+                disabled={statusLoading || order.is_canceled}
+                className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-600 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                배송중
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-6">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                주문 정보
+              </h2>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <InfoCard label="주문 번호" value={order.order_number} />
+                <InfoCard label="주문 상태" value={order.is_canceled ? '주문 취소' : order.status} />
+                <InfoCard label="치과명" value={order.clinic_name || '-'} />
+                <InfoCard label="등록일" value={formatDateTime(order.created_at)} />
+                <InfoCard label="환자명" value={order.patient_name || '-'} />
+                <InfoCard label="성별" value={order.gender || '-'} />
+                <InfoCard label="생년월일" value={formatDate(order.birth_date)} />
+                <InfoCard label="제품명" value={order.product_type || '-'} />
+                <InfoCard label="납기일" value={order.delivery_date || '-'} />
+                <InfoCard label="두께" value={order.thickness || '-'} />
+                <InfoCard label="지그 제작 여부" value={order.jig_required || '-'} />
+                <InfoCard label="선택 치아" value={selectedTeethText} />
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-bold text-slate-800">요청사항</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                  {order.request_note || '입력된 요청사항이 없습니다.'}
+                </p>
+              </div>
+
+              {order.is_canceled && (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm font-bold text-red-700">취소 정보</p>
+                  <p className="mt-2 text-sm text-red-600">
+                    취소 사유: {order.cancel_reason || '-'}
+                  </p>
+                  <p className="mt-1 text-sm text-red-600">
+                    취소 일시: {formatDateTime(order.canceled_at)}
+                  </p>
                 </div>
-              ) : (
-                <>
-                  <div className="mt-6">
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      취소 사유
-                    </label>
-                    <textarea
-                      value={cancelReason}
-                      onChange={(e) => setCancelReason(e.target.value)}
-                      rows={3}
-                      placeholder="예: 환자 일정 변경으로 주문 취소"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none focus:border-blue-500"
-                      disabled={!canCancelOrder}
-                    />
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleCancelOrder}
-                      disabled={cancelingOrder || !canCancelOrder}
-                      className="inline-flex rounded-2xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
-                    >
-                      {cancelingOrder ? '취소 처리 중...' : '주문 취소'}
-                    </button>
-
-                    {!canCancelOrder ? (
-                      <span className="text-sm text-slate-500">
-                        {isClinic
-                          ? '치과 계정은 자기 주문이면서 접수 대기 상태일 때만 취소할 수 있습니다.'
-                          : '현재 이 주문은 취소할 수 없습니다.'}
-                      </span>
-                    ) : null}
-                  </div>
-                </>
               )}
             </div>
 
-            <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-2xl font-bold text-slate-900">요청사항</h3>
-              <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-5 text-base text-slate-700">
-                {orderData.request_note?.trim() ? orderData.request_note : '요청사항이 없습니다.'}
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                    스캔 파일
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    스캔 원본 파일은 관리자만 다운로드할 수 있습니다.
+                  </p>
+                </div>
+
+                {canDownloadScan && scanFiles.length > 0 && (
+                  <button
+                    onClick={handleDownloadAllScan}
+                    disabled={downloadingAllScan}
+                    className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {downloadingAllScan ? '압축 준비 중...' : '전체 다운로드'}
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {scanFiles.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                    업로드된 스캔 파일이 없습니다.
+                  </div>
+                ) : (
+                  scanFiles.map((file, index) => (
+                    <div
+                      key={`${file.path}-${index}`}
+                      className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{file.path}</p>
+                      </div>
+
+                      {canDownloadScan && (
+                        <button
+                          onClick={() => handleDownload(file.path, 'scan')}
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          다운로드
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
-            {isAdmin ? (
-              <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-2xl font-bold text-slate-900">관리자 상태 변경</h3>
-
-                <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <select
-                    value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value as OrderData['status'])}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none focus:border-blue-500 sm:max-w-xs"
-                    disabled={orderData.is_canceled}
-                  >
-                    {ORDER_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleChangeStatus}
-                    disabled={actionLoading || orderData.is_canceled}
-                    className="inline-flex rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                  >
-                    {actionLoading ? '변경 중...' : '상태 변경 저장'}
-                  </button>
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                    디자인 파일
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-500">
+                    STL 또는 ZIP 파일을 업로드하고 다운로드할 수 있습니다.
+                  </p>
                 </div>
 
-                {orderData.is_canceled ? (
-                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    취소된 주문은 상태를 변경할 수 없습니다.
+                {canUploadDesign && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
+                    >
+                      파일 선택
+                    </button>
+                    <span className="text-sm text-slate-500">
+                      {selectedFiles.length > 0
+                        ? `${selectedFiles.length}개 파일 선택됨`
+                        : '선택된 파일 없음'}
+                    </span>
                   </div>
-                ) : null}
+                )}
               </div>
-            ) : null}
+
+              {canUploadDesign && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".stl,.zip,.STL,.ZIP"
+                    onChange={handleFileInputChange}
+                    className="hidden"
+                  />
+
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`mt-5 rounded-2xl border-2 border-dashed p-6 transition ${
+                      dragActive
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'border-slate-300 bg-slate-50'
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-slate-800">
+                      여기에 디자인 파일을 드래그하거나 파일 선택 버튼으로 업로드하세요.
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      허용 파일 형식: STL, ZIP
+                    </p>
+
+                    {selectedFiles.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {selectedFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${index}`}
+                            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+                          >
+                            <span className="truncate">{file.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleFileRemove(index)}
+                              className="ml-3 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-5">
+                      <button
+                        onClick={handleDesignUpload}
+                        disabled={uploadingDesign || selectedFiles.length === 0}
+                        className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {uploadingDesign ? '업로드 중...' : '디자인 파일 업로드'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="mt-5 space-y-3">
+                {designFiles.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                    아직 업로드된 디자인 파일이 없습니다.
+                  </div>
+                ) : (
+                  designFiles.map((file, index) => (
+                    <div
+                      key={`${file.path}-${index}`}
+                      className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{file.path}</p>
+                      </div>
+
+                      {canDownloadDesign && (
+                        <button
+                          onClick={() => handleDownload(file.path, 'design')}
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          다운로드
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-        </section>
+
+          <div className="space-y-6">
+            {isAdmin && (
+              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                  수정 요청
+                </h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  치과에 수정 요청을 보낼 수 있습니다.
+                </p>
+
+                <textarea
+                  value={revisionNote}
+                  onChange={(e) => setRevisionNote(e.target.value)}
+                  rows={5}
+                  className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500"
+                  placeholder="수정 요청 내용을 입력해주세요."
+                />
+
+                <button
+                  onClick={handleRevisionRequest}
+                  disabled={revisionLoading || order.is_canceled}
+                  className="mt-4 w-full rounded-xl bg-rose-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {revisionLoading ? '처리 중...' : '수정 요청 등록'}
+                </button>
+              </div>
+            )}
+
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                주문 취소
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                관리자 또는 권한 있는 치과가 주문 취소를 요청할 수 있습니다.
+              </p>
+
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={4}
+                className="mt-5 w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500"
+                placeholder="취소 사유를 입력해주세요."
+              />
+
+              <button
+                onClick={handleCancelOrder}
+                disabled={cancelLoading || order.is_canceled}
+                className="mt-4 w-full rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {cancelLoading ? '처리 중...' : '주문 취소'}
+              </button>
+            </div>
+
+            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                진행 정보
+              </h2>
+
+              <div className="mt-5 space-y-3">
+                <InfoCard label="현재 상태" value={order.is_canceled ? '주문 취소' : order.status} />
+                <InfoCard
+                  label="수정 요청 여부"
+                  value={order.admin_revision_requested ? '요청됨' : '없음'}
+                />
+                <InfoCard
+                  label="수정 요청 시간"
+                  value={formatDateTime(order.admin_revision_requested_at)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
-  );
+  )
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-bold text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-900">{value || '-'}</p>
+    </div>
+  )
 }
