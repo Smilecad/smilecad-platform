@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase'
 
 const supabase = createClient()
 
+type OrderStatus = '접수 대기' | '디자인 작업중' | '수정 요청 중' | '주문 재접수'
+
 type Profile = {
   id: string
   role: 'admin' | 'clinic'
@@ -31,7 +33,7 @@ type OrderItem = {
   scan_file_paths: string[] | null
   design_file_names: string[] | null
   design_file_paths: string[] | null
-  status: '접수 대기' | '디자인 작업중' | '배송중'
+  status: OrderStatus
   created_at: string
   user_id: string
   user_role: string
@@ -45,6 +47,8 @@ type OrderItem = {
   admin_revision_requested_by: string | null
 }
 
+type AdminQuickFilter = 'all' | 'revision_requested' | 'resubmitted'
+
 export default function OrdersPage() {
   const router = useRouter()
 
@@ -53,6 +57,7 @@ export default function OrdersPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [orders, setOrders] = useState<OrderItem[]>([])
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [adminQuickFilter, setAdminQuickFilter] = useState<AdminQuickFilter>('all')
 
   useEffect(() => {
     let isMounted = true
@@ -154,12 +159,38 @@ export default function OrdersPage() {
 
   const isAdmin = profile?.role === 'admin'
 
+  const revisionRequestedCount = useMemo(
+    () => orders.filter((order) => !order.is_canceled && order.status === '수정 요청 중').length,
+    [orders]
+  )
+
+  const resubmittedCount = useMemo(
+    () => orders.filter((order) => !order.is_canceled && order.status === '주문 재접수').length,
+    [orders]
+  )
+
   const filteredOrders = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase()
 
-    if (!keyword) return orders
+    let nextOrders = orders
 
-    return orders.filter((order) => {
+    if (isAdmin) {
+      if (adminQuickFilter === 'revision_requested') {
+        nextOrders = nextOrders.filter(
+          (order) => !order.is_canceled && order.status === '수정 요청 중'
+        )
+      }
+
+      if (adminQuickFilter === 'resubmitted') {
+        nextOrders = nextOrders.filter(
+          (order) => !order.is_canceled && order.status === '주문 재접수'
+        )
+      }
+    }
+
+    if (!keyword) return nextOrders
+
+    return nextOrders.filter((order) => {
       const targetText = [
         order.order_number,
         order.clinic_name,
@@ -173,7 +204,7 @@ export default function OrdersPage() {
 
       return targetText.includes(keyword)
     })
-  }, [orders, searchKeyword])
+  }, [orders, searchKeyword, isAdmin, adminQuickFilter])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -240,9 +271,17 @@ export default function OrdersPage() {
       )
     }
 
+    if (order.status === '수정 요청 중') {
+      return (
+        <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
+          수정 요청 중
+        </span>
+      )
+    }
+
     return (
-      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-        배송중
+      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+        주문 재접수
       </span>
     )
   }
@@ -273,10 +312,10 @@ export default function OrdersPage() {
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-7xl">
+        <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 md:px-8">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-sm font-bold tracking-[0.2em] text-blue-600">
                   SMILECAD PLATFORM
@@ -291,7 +330,43 @@ export default function OrdersPage() {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                {isAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAdminQuickFilter((prev) =>
+                          prev === 'revision_requested' ? 'all' : 'revision_requested'
+                        )
+                      }
+                      className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                        adminQuickFilter === 'revision_requested'
+                          ? 'border-rose-300 bg-rose-50 text-rose-700'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      수정 주문 {revisionRequestedCount}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAdminQuickFilter((prev) =>
+                          prev === 'resubmitted' ? 'all' : 'resubmitted'
+                        )
+                      }
+                      className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                        adminQuickFilter === 'resubmitted'
+                          ? 'border-amber-300 bg-amber-50 text-amber-700'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      재접수 주문 {resubmittedCount}
+                    </button>
+                  </>
+                )}
+
                 {!isAdmin && (
                   <button
                     onClick={goToNewOrder}
@@ -313,7 +388,7 @@ export default function OrdersPage() {
 
           <div className="border-b border-slate-200 px-5 py-4 md:px-8">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-xl font-bold text-slate-900">
                   {isAdmin ? '전체 주문' : '내 주문'}
                 </h2>
@@ -385,20 +460,11 @@ export default function OrdersPage() {
                       {isAdmin && (
                         <td className="px-6 py-5 text-slate-700">{order.clinic_name || '-'}</td>
                       )}
-                      <td className="px-6 py-5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {renderStatusBadge(order)}
-                          {order.admin_revision_requested && !order.is_canceled && (
-                            <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
-                              수정 요청
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                      <td className="px-6 py-5">{renderStatusBadge(order)}</td>
                       <td className="px-6 py-5">
                         <button
                           onClick={() => goToOrderDetail(order.id)}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           상세 보기
                         </button>
@@ -457,17 +523,10 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="mt-4 flex items-center justify-between">
-                    <div className="flex flex-wrap gap-2">
-                      {order.admin_revision_requested && !order.is_canceled && (
-                        <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
-                          수정 요청
-                        </span>
-                      )}
-                    </div>
-
+                    <div />
                     <button
                       onClick={() => goToOrderDetail(order.id)}
-                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                     >
                       상세 보기
                     </button>
@@ -476,7 +535,7 @@ export default function OrdersPage() {
               ))
             )}
           </div>
-        </section>
+        </div>
       </div>
     </main>
   )

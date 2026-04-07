@@ -17,6 +17,7 @@ type OrderRow = {
   order_number: string
   scan_file_paths: string[] | string | null
   design_file_paths: string[] | string | null
+  resubmission_file_paths: string[] | string | null
 }
 
 function getAccessTokenFromRequest(request: Request) {
@@ -49,7 +50,7 @@ function normalizeStringArray(value: unknown): string[] {
         return parsed.filter((item): item is string => typeof item === 'string')
       }
     } catch {
-      // JSON 배열 문자열이 아니면 일반 문자열 하나로 처리
+      // pass
     }
 
     return [trimmed]
@@ -119,7 +120,9 @@ async function getProfile(userId: string) {
 async function getOrder(orderId: string) {
   const { data, error } = await supabaseAdmin
     .from('orders')
-    .select('id, user_id, order_number, scan_file_paths, design_file_paths')
+    .select(
+      'id, user_id, order_number, scan_file_paths, design_file_paths, resubmission_file_paths'
+    )
     .eq('id', orderId)
     .single()
 
@@ -131,15 +134,25 @@ async function getOrder(orderId: string) {
 }
 
 function validateFileAccess(params: {
-  type: 'scan' | 'design'
+  type: 'scan' | 'design' | 'resubmission'
   filePath?: string | null
   mode: 'single' | 'all'
   isAdmin: boolean
   isOwnerClinic: boolean
   scanPaths: string[]
   designPaths: string[]
+  resubmissionPaths: string[]
 }) {
-  const { type, filePath, mode, isAdmin, isOwnerClinic, scanPaths, designPaths } = params
+  const {
+    type,
+    filePath,
+    mode,
+    isAdmin,
+    isOwnerClinic,
+    scanPaths,
+    designPaths,
+    resubmissionPaths,
+  } = params
 
   if (type === 'scan') {
     if (!isAdmin) {
@@ -161,19 +174,47 @@ function validateFileAccess(params: {
     return { ok: true as const }
   }
 
+  if (type === 'design') {
+    if (!isAdmin && !isOwnerClinic) {
+      return {
+        ok: false,
+        status: 403,
+        error: '디자인 파일을 다운로드할 권한이 없습니다.',
+      }
+    }
+
+    if (mode === 'single' && (!filePath || !designPaths.includes(filePath))) {
+      return {
+        ok: false,
+        status: 404,
+        error: `해당 디자인 파일 경로를 찾을 수 없습니다. 요청값: ${filePath}`,
+      }
+    }
+
+    return { ok: true as const }
+  }
+
   if (!isAdmin && !isOwnerClinic) {
     return {
       ok: false,
       status: 403,
-      error: '디자인 파일을 다운로드할 권한이 없습니다.',
+      error: '재접수 파일을 다운로드할 권한이 없습니다.',
     }
   }
 
-  if (mode === 'single' && (!filePath || !designPaths.includes(filePath))) {
+  if (mode === 'all') {
+    return {
+      ok: false,
+      status: 400,
+      error: '재접수 파일 전체 다운로드는 현재 지원하지 않습니다.',
+    }
+  }
+
+  if (!filePath || !resubmissionPaths.includes(filePath)) {
     return {
       ok: false,
       status: 404,
-      error: `해당 디자인 파일 경로를 찾을 수 없습니다. 요청값: ${filePath}`,
+      error: `해당 재접수 파일 경로를 찾을 수 없습니다. 요청값: ${filePath}`,
     }
   }
 
@@ -219,10 +260,7 @@ async function handleAllDownload(params: {
   for (const filePath of targetPaths) {
     if (!filePath || typeof filePath !== 'string') continue
 
-    if (
-      typeof order.order_number === 'string' &&
-      !filePath.startsWith(order.order_number)
-    ) {
+    if (typeof order.order_number === 'string' && !filePath.startsWith(order.order_number)) {
       continue
     }
 
@@ -255,7 +293,7 @@ async function handleAllDownload(params: {
     status: 200,
     headers: {
       'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="{encodeURIComponent(zipFileName)}"`,
+      'Content-Disposition': `attachment; filename="${zipFileName}"`,
     },
   })
 }
@@ -288,7 +326,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (type !== 'scan' && type !== 'design') {
+    if (type !== 'scan' && type !== 'design' && type !== 'resubmission') {
       return NextResponse.json(
         { error: '허용되지 않은 파일 타입입니다.' },
         { status: 400 }
@@ -309,15 +347,17 @@ export async function GET(request: NextRequest) {
 
     const scanPaths = normalizeStringArray(order.scan_file_paths)
     const designPaths = normalizeStringArray(order.design_file_paths)
+    const resubmissionPaths = normalizeStringArray(order.resubmission_file_paths)
 
     const validation = validateFileAccess({
-      type,
+      type: type as 'scan' | 'design' | 'resubmission',
       filePath,
       mode,
       isAdmin,
       isOwnerClinic,
       scanPaths,
       designPaths,
+      resubmissionPaths,
     })
 
     if (!validation.ok) {
@@ -330,7 +370,7 @@ export async function GET(request: NextRequest) {
     if (mode === 'all') {
       return await handleAllDownload({
         order,
-        type,
+        type: type as 'scan' | 'design',
         scanPaths,
         designPaths,
       })

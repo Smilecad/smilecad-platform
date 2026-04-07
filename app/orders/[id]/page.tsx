@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase'
 
 const supabase = createClient()
 
+type OrderStatus = '접수 대기' | '디자인 작업중' | '수정 요청 중' | '주문 재접수'
+
 type Profile = {
   id: string
   role: 'admin' | 'clinic'
@@ -31,7 +33,9 @@ type OrderItem = {
   scan_file_paths: string[] | string | null
   design_file_names: string[] | string | null
   design_file_paths: string[] | string | null
-  status: '접수 대기' | '디자인 작업중' | '배송중'
+  resubmission_file_names: string[] | string | null
+  resubmission_file_paths: string[] | string | null
+  status: OrderStatus
   created_at: string
   user_id: string
   user_role: string
@@ -112,7 +116,7 @@ export default function OrderDetailPage() {
   const [cancelLoading, setCancelLoading] = useState(false)
   const [revisionLoading, setRevisionLoading] = useState(false)
   const [uploadingDesign, setUploadingDesign] = useState(false)
-  const [downloadingAllScan, setDownloadingAllScan] = useState(false)
+  const [uploadingResubmission, setUploadingResubmission] = useState(false)
 
   const [cancelReason, setCancelReason] = useState('')
   const [revisionNote, setRevisionNote] = useState('')
@@ -120,7 +124,11 @@ export default function OrderDetailPage() {
   const [dragActive, setDragActive] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
 
+  const [resubmissionDragActive, setResubmissionDragActive] = useState(false)
+  const [selectedResubmissionFiles, setSelectedResubmissionFiles] = useState<File[]>([])
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const resubmissionFileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -170,6 +178,8 @@ export default function OrderDetailPage() {
             scan_file_paths,
             design_file_names,
             design_file_paths,
+            resubmission_file_names,
+            resubmission_file_paths,
             status,
             created_at,
             user_id,
@@ -246,6 +256,18 @@ export default function OrderDetailPage() {
     }))
   }, [order])
 
+  const resubmissionFiles = useMemo<FileItem[]>(() => {
+    if (!order) return []
+
+    const names = normalizeStringArray(order.resubmission_file_names)
+    const paths = normalizeStringArray(order.resubmission_file_paths)
+
+    return paths.map((path, index) => ({
+      name: names[index] || `resubmission-file-${index + 1}`,
+      path,
+    }))
+  }, [order])
+
   const selectedTeethText = useMemo(() => {
     if (!order) return '-'
 
@@ -307,6 +329,8 @@ export default function OrderDetailPage() {
         scan_file_paths,
         design_file_names,
         design_file_paths,
+        resubmission_file_names,
+        resubmission_file_paths,
         status,
         created_at,
         user_id,
@@ -329,24 +353,32 @@ export default function OrderDetailPage() {
     }
   }
 
-  const handleDownload = async (filePath: string, type: 'scan' | 'design') => {
-    try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
+  const getAccessToken = async () => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
 
-      if (sessionError || !session?.access_token) {
-        alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
-        return
-      }
+    if (sessionError || !session?.access_token) {
+      throw new Error('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
+    }
+
+    return session.access_token
+  }
+
+  const handleDownload = async (
+    filePath: string,
+    type: 'scan' | 'design' | 'resubmission'
+  ) => {
+    try {
+      const accessToken = await getAccessToken()
 
       const res = await fetch(
         `/api/files/download?orderId=${orderId}&filePath=${encodeURIComponent(filePath)}&type=${type}`,
         {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${accessToken}`,
           },
         }
       )
@@ -366,117 +398,57 @@ export default function OrderDetailPage() {
       window.open(data.url, '_blank')
     } catch (err) {
       console.error(err)
-      alert('다운로드 중 오류가 발생했습니다.')
+      alert(err instanceof Error ? err.message : '다운로드 중 오류가 발생했습니다.')
     }
   }
 
-  const handleDownloadAllScan = async () => {
-    if (!order || !canDownloadScan) return
+  const handleStatusChange = async (nextStatus: '접수 대기' | '디자인 작업중') => {
+    if (!isAdmin || !order) return
 
     try {
-      setDownloadingAllScan(true)
+      setStatusLoading(true)
+      const accessToken = await getAccessToken()
 
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
+      const res = await fetch(`/api/orders/${order.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+        }),
+      })
 
-      if (sessionError || !session?.access_token) {
-        alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
-        return
-      }
-
-      const res = await fetch(
-        `/api/files/download?orderId=${order.id}&type=scan&mode=all`,
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      )
+      const data = await parseJsonSafe(res)
 
       if (!res.ok) {
-        const data = await parseJsonSafe(res)
-        alert(data.error || '전체 다운로드에 실패했습니다.')
+        alert(data.error || '상태 변경에 실패했습니다.')
         return
       }
 
-      const blob = await res.blob()
-      const url = window.URL.createObjectURL(blob)
-
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${order.order_number}-scan-files.zip`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-
-      window.URL.revokeObjectURL(url)
+      await refreshOrder()
+      alert('주문 상태가 변경되었습니다.')
     } catch (err) {
       console.error(err)
-      alert('전체 다운로드 중 오류가 발생했습니다.')
+      alert(err instanceof Error ? err.message : '상태 변경 중 오류가 발생했습니다.')
     } finally {
-      setDownloadingAllScan(false)
+      setStatusLoading(false)
     }
   }
-
-  const handleStatusChange = async (
-  nextStatus: '접수 대기' | '디자인 작업중' | '배송중'
-) => {
-  if (!isAdmin || !order) return
-
-  try {
-    setStatusLoading(true)
-
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession()
-
-    if (sessionError || !session?.access_token) {
-      alert('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
-      return
-    }
-
-    const res = await fetch(`/api/orders/${order.id}/status`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        status: nextStatus,
-      }),
-    })
-
-    const data = await parseJsonSafe(res)
-
-    if (!res.ok) {
-      alert(data.error || '상태 변경에 실패했습니다.')
-      return
-    }
-
-    await refreshOrder()
-    alert('주문 상태가 변경되었습니다.')
-  } catch (err) {
-    console.error(err)
-    alert('상태 변경 중 오류가 발생했습니다.')
-  } finally {
-    setStatusLoading(false)
-  }
-}
 
   const handleRevisionRequest = async () => {
     if (!isAdmin || !order) return
 
     try {
       setRevisionLoading(true)
+      const accessToken = await getAccessToken()
 
       const res = await fetch(`/api/orders/${order.id}/revision-request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           note: revisionNote,
@@ -494,7 +466,7 @@ export default function OrderDetailPage() {
       alert('수정 요청이 등록되었습니다.')
     } catch (err) {
       console.error(err)
-      alert('수정 요청 처리 중 오류가 발생했습니다.')
+      alert(err instanceof Error ? err.message : '수정 요청 처리 중 오류가 발생했습니다.')
     } finally {
       setRevisionLoading(false)
     }
@@ -505,11 +477,13 @@ export default function OrderDetailPage() {
 
     try {
       setCancelLoading(true)
+      const accessToken = await getAccessToken()
 
       const res = await fetch(`/api/orders/${order.id}/cancel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           reason: cancelReason,
@@ -527,14 +501,14 @@ export default function OrderDetailPage() {
       alert('주문이 취소되었습니다.')
     } catch (err) {
       console.error(err)
-      alert('주문 취소 중 오류가 발생했습니다.')
+      alert(err instanceof Error ? err.message : '주문 취소 중 오류가 발생했습니다.')
     } finally {
       setCancelLoading(false)
     }
   }
 
-  const setFilesFromInput = (files: FileList | null) => {
-    if (!files) return
+  const mergeFiles = (prevFiles: File[], files: FileList | null) => {
+    if (!files) return prevFiles
 
     const nextFiles = Array.from(files).filter((file) => {
       const lower = file.name.toLowerCase()
@@ -543,24 +517,26 @@ export default function OrderDetailPage() {
 
     if (nextFiles.length === 0) {
       alert('STL 또는 ZIP 파일만 업로드할 수 있습니다.')
-      return
+      return prevFiles
     }
 
-    setSelectedFiles((prev) => {
-      const merged = [...prev]
+    const merged = [...prevFiles]
 
-      for (const file of nextFiles) {
-        const alreadyExists = merged.some(
-          (existing) => existing.name === file.name && existing.size === file.size
-        )
+    for (const file of nextFiles) {
+      const alreadyExists = merged.some(
+        (existing) => existing.name === file.name && existing.size === file.size
+      )
 
-        if (!alreadyExists) {
-          merged.push(file)
-        }
+      if (!alreadyExists) {
+        merged.push(file)
       }
+    }
 
-      return merged
-    })
+    return merged
+  }
+
+  const setFilesFromInput = (files: FileList | null) => {
+    setSelectedFiles((prev) => mergeFiles(prev, files))
   }
 
   const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -592,6 +568,37 @@ export default function OrderDetailPage() {
     e.stopPropagation()
     setDragActive(false)
     setFilesFromInput(e.dataTransfer.files)
+  }
+
+  const handleResubmissionFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setSelectedResubmissionFiles((prev) => mergeFiles(prev, e.target.files))
+
+    if (resubmissionFileInputRef.current) {
+      resubmissionFileInputRef.current.value = ''
+    }
+  }
+
+  const handleResubmissionFileRemove = (targetIndex: number) => {
+    setSelectedResubmissionFiles((prev) => prev.filter((_, index) => index !== targetIndex))
+  }
+
+  const handleResubmissionDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setResubmissionDragActive(true)
+  }
+
+  const handleResubmissionDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setResubmissionDragActive(false)
+  }
+
+  const handleResubmissionDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setResubmissionDragActive(false)
+    setSelectedResubmissionFiles((prev) => mergeFiles(prev, e.dataTransfer.files))
   }
 
   const handleDesignUpload = async () => {
@@ -628,10 +635,13 @@ export default function OrderDetailPage() {
         uploadedPaths.push(storagePath)
       }
 
+      const accessToken = await getAccessToken()
+
       const res = await fetch(`/api/orders/${order.id}/design-files`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           design_file_names: uploadedNames,
@@ -655,9 +665,80 @@ export default function OrderDetailPage() {
       alert('디자인 파일 업로드가 완료되었습니다.')
     } catch (err) {
       console.error(err)
-      alert('디자인 파일 업로드 중 오류가 발생했습니다.')
+      alert(err instanceof Error ? err.message : '디자인 파일 업로드 중 오류가 발생했습니다.')
     } finally {
       setUploadingDesign(false)
+    }
+  }
+
+  const handleResubmissionUpload = async () => {
+    if (!order || selectedResubmissionFiles.length === 0) {
+      alert('업로드할 재접수 파일을 먼저 선택해주세요.')
+      return
+    }
+
+    try {
+      setUploadingResubmission(true)
+
+      const existingNames = normalizeStringArray(order.resubmission_file_names)
+      const existingPaths = normalizeStringArray(order.resubmission_file_paths)
+
+      const uploadedNames = [...existingNames]
+      const uploadedPaths = [...existingPaths]
+
+      for (const file of selectedResubmissionFiles) {
+        const safeName = safeFileName(file.name)
+        const storagePath = `${order.order_number}/resubmission/${Date.now()}_${safeName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('order-files')
+          .upload(storagePath, file, {
+            upsert: false,
+          })
+
+        if (uploadError) {
+          alert(`파일 업로드 실패: ${file.name}`)
+          return
+        }
+
+        uploadedNames.push(file.name)
+        uploadedPaths.push(storagePath)
+      }
+
+      const accessToken = await getAccessToken()
+
+      const res = await fetch(`/api/orders/${order.id}/resubmission-files`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          resubmission_file_names: uploadedNames,
+          resubmission_file_paths: uploadedPaths,
+        }),
+      })
+
+      const data = await parseJsonSafe(res)
+
+      if (!res.ok) {
+        alert(data.error || '재접수 파일 저장에 실패했습니다.')
+        return
+      }
+
+      setSelectedResubmissionFiles([])
+
+      if (resubmissionFileInputRef.current) {
+        resubmissionFileInputRef.current.value = ''
+      }
+
+      await refreshOrder()
+      alert('재접수 파일 업로드가 완료되었습니다.')
+    } catch (err) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : '재접수 파일 업로드 중 오류가 발생했습니다.')
+    } finally {
+      setUploadingResubmission(false)
     }
   }
 
@@ -688,9 +769,17 @@ export default function OrderDetailPage() {
       )
     }
 
+    if (order.status === '수정 요청 중') {
+      return (
+        <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
+          수정 요청 중
+        </span>
+      )
+    }
+
     return (
-      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-        배송중
+      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+        주문 재접수
       </span>
     )
   }
@@ -732,11 +821,6 @@ export default function OrderDetailPage() {
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <span className="text-lg font-bold text-slate-900">{order.order_number}</span>
                 {renderStatusBadge()}
-                {order.admin_revision_requested && !order.is_canceled && (
-                  <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
-                    수정 요청
-                  </span>
-                )}
               </div>
             </div>
 
@@ -775,14 +859,6 @@ export default function OrderDetailPage() {
                 className="rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 text-sm font-bold text-blue-600 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 디자인 작업중
-              </button>
-
-              <button
-                onClick={() => handleStatusChange('배송중')}
-                disabled={statusLoading || order.is_canceled}
-                className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-600 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                배송중
               </button>
             </div>
           </div>
@@ -831,26 +907,12 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                    스캔 파일
-                  </h2>
-                  <p className="mt-2 text-sm text-slate-500">
-                    스캔 원본 파일은 관리자만 다운로드할 수 있습니다.
-                  </p>
-                </div>
-
-                {canDownloadScan && scanFiles.length > 0 && (
-                  <button
-                    onClick={handleDownloadAllScan}
-                    disabled={downloadingAllScan}
-                    className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {downloadingAllScan ? '압축 준비 중...' : '전체 다운로드'}
-                  </button>
-                )}
-              </div>
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                스캔 파일
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                스캔 원본 파일은 관리자만 다운로드할 수 있습니다.
+              </p>
 
               <div className="mt-5 space-y-3">
                 {scanFiles.length === 0 ? (
@@ -863,15 +925,15 @@ export default function OrderDetailPage() {
                       key={`${file.path}-${index}`}
                       className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{file.path}</p>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{file.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{file.path}</p>
                       </div>
 
                       {canDownloadScan && (
                         <button
                           onClick={() => handleDownload(file.path, 'scan')}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           다운로드
                         </button>
@@ -889,7 +951,7 @@ export default function OrderDetailPage() {
                     디자인 파일
                   </h2>
                   <p className="mt-2 text-sm text-slate-500">
-                    STL 또는 ZIP 파일을 업로드하고 다운로드할 수 있습니다.
+                    관리자와 치과 모두 STL 또는 ZIP 파일을 업로드하고 다운로드할 수 있습니다.
                   </p>
                 </div>
 
@@ -926,13 +988,11 @@ export default function OrderDetailPage() {
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     className={`mt-5 rounded-2xl border-2 border-dashed p-6 transition ${
-                      dragActive
-                        ? 'border-blue-400 bg-blue-50'
-                        : 'border-slate-300 bg-slate-50'
+                      dragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50'
                     }`}
                   >
                     <p className="text-sm font-semibold text-slate-800">
-                      여기에 디자인 파일을 드래그하거나 파일 선택 버튼으로 업로드하세요.
+                      여기에 디자인 파일을 드래그해서 놓거나, 파일 선택 버튼을 눌러 업로드하세요.
                     </p>
                     <p className="mt-2 text-xs text-slate-500">
                       허용 파일 형식: STL, ZIP
@@ -945,11 +1005,11 @@ export default function OrderDetailPage() {
                             key={`${file.name}-${index}`}
                             className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
                           >
-                            <span className="truncate">{file.name}</span>
+                            <span>{file.name}</span>
                             <button
                               type="button"
                               onClick={() => handleFileRemove(index)}
-                              className="ml-3 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
+                              className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
                             >
                               삭제
                             </button>
@@ -964,7 +1024,7 @@ export default function OrderDetailPage() {
                         disabled={uploadingDesign || selectedFiles.length === 0}
                         className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {uploadingDesign ? '업로드 중...' : '디자인 파일 업로드'}
+                        {uploadingDesign ? '업로드 중...' : '수정본 업로드 / 재접수'}
                       </button>
                     </div>
                   </div>
@@ -982,15 +1042,15 @@ export default function OrderDetailPage() {
                       key={`${file.path}-${index}`}
                       className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{file.path}</p>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{file.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{file.path}</p>
                       </div>
 
                       {canDownloadDesign && (
                         <button
                           onClick={() => handleDownload(file.path, 'design')}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           다운로드
                         </button>
@@ -1000,6 +1060,127 @@ export default function OrderDetailPage() {
                 )}
               </div>
             </div>
+
+            {order.status === '수정 요청 중' && (
+              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                      재접수 파일 업로드
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-500">
+                      수정 요청이 들어온 주문에 대해 재접수 파일을 업로드할 수 있습니다.
+                    </p>
+                  </div>
+
+                  {canUploadDesign && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => resubmissionFileInputRef.current?.click()}
+                        className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
+                      >
+                        파일 선택
+                      </button>
+                      <span className="text-sm text-slate-500">
+                        {selectedResubmissionFiles.length > 0
+                          ? `${selectedResubmissionFiles.length}개 파일 선택됨`
+                          : '선택된 파일 없음'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {canUploadDesign && (
+                  <>
+                    <input
+                      ref={resubmissionFileInputRef}
+                      type="file"
+                      multiple
+                      accept=".stl,.zip,.STL,.ZIP"
+                      onChange={handleResubmissionFileInputChange}
+                      className="hidden"
+                    />
+
+                    <div
+                      onDragOver={handleResubmissionDragOver}
+                      onDragLeave={handleResubmissionDragLeave}
+                      onDrop={handleResubmissionDrop}
+                      className={`mt-5 rounded-2xl border-2 border-dashed p-6 transition ${
+                        resubmissionDragActive
+                          ? 'border-amber-400 bg-amber-50'
+                          : 'border-slate-300 bg-slate-50'
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-slate-800">
+                        여기에 재접수 파일을 드래그해서 놓거나, 파일 선택 버튼을 눌러 업로드하세요.
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        허용 파일 형식: STL, ZIP
+                      </p>
+
+                      {selectedResubmissionFiles.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {selectedResubmissionFiles.map((file, index) => (
+                            <div
+                              key={`${file.name}-${index}`}
+                              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+                            >
+                              <span>{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleResubmissionFileRemove(index)}
+                                className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-200"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="mt-5">
+                        <button
+                          onClick={handleResubmissionUpload}
+                          disabled={uploadingResubmission || selectedResubmissionFiles.length === 0}
+                          className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {uploadingResubmission ? '업로드 중...' : '재접수 파일 업로드'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="mt-5 space-y-3">
+                  {resubmissionFiles.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+                      아직 업로드된 재접수 파일이 없습니다.
+                    </div>
+                  ) : (
+                    resubmissionFiles.map((file, index) => (
+                      <div
+                        key={`${file.path}-${index}`}
+                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{file.name}</p>
+                          <p className="mt-1 text-xs text-slate-500">{file.path}</p>
+                        </div>
+
+                        {canDownloadDesign && (
+                          <button
+                            onClick={() => handleDownload(file.path, 'resubmission')}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            다운로드
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">

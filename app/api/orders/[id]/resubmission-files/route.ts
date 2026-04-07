@@ -36,10 +36,10 @@ export async function POST(request: Request, context: RouteContext) {
     const { user, profile } = await getAuthenticatedServerUser(request)
 
     const body = await request.json().catch(() => ({}))
-    const design_file_names = normalizeStringArray(body.design_file_names)
-    const design_file_paths = normalizeStringArray(body.design_file_paths)
+    const resubmission_file_names = normalizeStringArray(body.resubmission_file_names)
+    const resubmission_file_paths = normalizeStringArray(body.resubmission_file_paths)
 
-    if (design_file_names.length !== design_file_paths.length) {
+    if (resubmission_file_names.length !== resubmission_file_paths.length) {
       return NextResponse.json(
         { error: '파일 이름과 파일 경로 수가 일치하지 않습니다.' },
         { status: 400 }
@@ -64,7 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!isAdmin && !isOwnerClinic) {
       return NextResponse.json(
-        { error: '디자인 파일을 수정할 권한이 없습니다.' },
+        { error: '재접수 파일을 업로드할 권한이 없습니다.' },
         { status: 403 }
       )
     }
@@ -76,18 +76,13 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
-    const nextStatus =
-      profile.role === 'clinic' && order.status === '수정 요청 중'
-        ? '주문 재접수'
-        : order.status
-
     const { error: updateError } = await supabaseAdmin
       .from('orders')
       .update({
-        design_file_names,
-        design_file_paths,
-        admin_revision_requested: nextStatus === '주문 재접수' ? false : order.status === '수정 요청 중',
-        status: nextStatus,
+        resubmission_file_names,
+        resubmission_file_paths,
+        admin_revision_requested: false,
+        status: '주문 재접수',
       })
       .eq('id', id)
 
@@ -101,10 +96,8 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ success: true })
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : '디자인 파일 저장 중 오류가 발생했습니다.'
+      error instanceof Error ? error.message : '재접수 파일 저장 중 오류가 발생했습니다.'
 
     return NextResponse.json({ error: message }, { status: 500 })
   }
-
-  
 }
