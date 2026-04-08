@@ -60,6 +60,7 @@ export default function LoginPage() {
   const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('')
   const [confirmationResult, setConfirmationResult] =
     useState<ConfirmationResult | null>(null)
+  const [recaptchaVerified, setRecaptchaVerified] = useState(false)
 
   const [checkingLoginId, setCheckingLoginId] = useState(false)
   const [loginIdChecked, setLoginIdChecked] = useState(false)
@@ -84,70 +85,9 @@ export default function LoginPage() {
     checkSession()
   }, [router])
 
-  useEffect(() => {
-    if (mode !== 'signup') {
-      return
-    }
-
-    if (recaptchaInitializedRef.current) {
-      return
-    }
-
-    const initRecaptcha = async () => {
-      const container = document.getElementById(recaptchaContainerId)
-      if (!container) return
-
-      try {
-        window.recaptchaVerifier = new RecaptchaVerifier(
-          firebaseAuth,
-          recaptchaContainerId,
-          {
-            size: 'normal',
-            callback: () => {
-              setMessage('reCAPTCHA 확인이 완료되었습니다. 인증번호를 발송해주세요.')
-            },
-          }
-        )
-
-        await window.recaptchaVerifier.render()
-        recaptchaInitializedRef.current = true
-      } catch (error) {
-        const msg =
-          error instanceof Error
-            ? error.message
-            : 'reCAPTCHA 초기화 중 오류가 발생했습니다.'
-        setErrorMessage(msg)
-      }
-    }
-
-    initRecaptcha()
-
-    return () => {
-      // signup -> login 탭 전환 시 재생성 문제를 막기 위해 clear는 하지 않음
-      // 페이지 unmount 시 브라우저가 정리하도록 둔다.
-    }
-  }, [mode])
-
   const resetMessages = () => {
     setMessage('')
     setErrorMessage('')
-  }
-
-  const resetPhoneVerification = () => {
-    setOtpCode('')
-    setOtpSent(false)
-    setPhoneVerified(false)
-    setVerifiedPhoneE164('')
-    setConfirmationResult(null)
-
-    if (firebaseAuth.currentUser) {
-      void firebaseSignOut(firebaseAuth)
-    }
-  }
-
-  const resetLoginIdCheck = () => {
-    setLoginIdChecked(false)
-    setLoginIdAvailable(false)
   }
 
   const formatPhoneForDisplay = (value: string) => {
@@ -192,6 +132,14 @@ export default function LoginPage() {
     return toKoreanPhoneE164(signupClinicPhone)
   }, [signupClinicPhone])
 
+  const isPhoneReadyForOtp = useMemo(() => {
+    return !!signupPhoneE164
+  }, [signupPhoneE164])
+
+  const canSendOtp = useMemo(() => {
+    return isPhoneReadyForOtp && recaptchaVerified && !otpSending
+  }, [isPhoneReadyForOtp, recaptchaVerified, otpSending])
+
   const resolvedSignupAuthEmail = useMemo(() => {
     const normalized = normalizeLoginId(signupLoginId)
 
@@ -201,6 +149,75 @@ export default function LoginPage() {
 
     return toAuthEmailFromLoginId(normalized)
   }, [signupLoginId])
+
+  const initRecaptcha = async () => {
+    const container = document.getElementById(recaptchaContainerId)
+    if (!container) return
+
+    if (window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier.clear()
+      } catch {}
+      window.recaptchaVerifier = undefined
+      recaptchaInitializedRef.current = false
+    }
+
+    try {
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        firebaseAuth,
+        recaptchaContainerId,
+        {
+          size: 'normal',
+          callback: () => {
+            setRecaptchaVerified(true)
+            setMessage('로봇 확인이 완료되었습니다. 인증번호를 발송해주세요.')
+          },
+          'expired-callback': () => {
+            setRecaptchaVerified(false)
+            setErrorMessage('reCAPTCHA가 만료되었습니다. 다시 체크해주세요.')
+          },
+        }
+      )
+
+      await window.recaptchaVerifier.render()
+      recaptchaInitializedRef.current = true
+    } catch (error) {
+      const msg =
+        error instanceof Error
+          ? error.message
+          : 'reCAPTCHA 초기화 중 오류가 발생했습니다.'
+      setErrorMessage(msg)
+    }
+  }
+
+  useEffect(() => {
+    if (mode !== 'signup') return
+    void initRecaptcha()
+  }, [mode])
+
+  const resetPhoneVerification = () => {
+    setOtpCode('')
+    setOtpSent(false)
+    setPhoneVerified(false)
+    setVerifiedPhoneE164('')
+    setConfirmationResult(null)
+    setRecaptchaVerified(false)
+
+    if (firebaseAuth.currentUser) {
+      void firebaseSignOut(firebaseAuth)
+    }
+
+    setTimeout(() => {
+      if (mode === 'signup') {
+        void initRecaptcha()
+      }
+    }, 0)
+  }
+
+  const resetLoginIdCheck = () => {
+    setLoginIdChecked(false)
+    setLoginIdAvailable(false)
+  }
 
   const ensureProfileAfterLogin = async (userId: string, fallbackLoginId: string) => {
     const { data: existingProfile, error: profileFetchError } = await supabase
@@ -334,31 +351,6 @@ export default function LoginPage() {
   const handleSendOtp = async () => {
     resetMessages()
 
-    if (!signupLoginId.trim()) {
-      setErrorMessage('아이디를 입력해주세요.')
-      return
-    }
-
-    if (!isValidLoginId(normalizeLoginId(signupLoginId))) {
-      setErrorMessage('아이디는 4~20자의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.')
-      return
-    }
-
-    if (!loginIdChecked || !loginIdAvailable) {
-      setErrorMessage('아이디 중복 확인을 먼저 완료해주세요.')
-      return
-    }
-
-    if (!signupClinicName.trim()) {
-      setErrorMessage('치과명을 입력해주세요.')
-      return
-    }
-
-    if (!signupClinicAddress.trim()) {
-      setErrorMessage('치과 주소를 입력해주세요.')
-      return
-    }
-
     if (!signupClinicPhone.trim()) {
       setErrorMessage('휴대폰 번호를 입력해주세요.')
       return
@@ -369,8 +361,8 @@ export default function LoginPage() {
       return
     }
 
-    if (signupClinicEmail.trim() && !isValidEmail(signupClinicEmail.trim())) {
-      setErrorMessage('치과 이메일 형식이 올바르지 않습니다.')
+    if (!recaptchaVerified) {
+      setErrorMessage('먼저 "로봇이 아닙니다"를 체크해주세요.')
       return
     }
 
@@ -880,12 +872,55 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={handleSendOtp}
-                      disabled={otpSending}
+                      disabled={!canSendOtp}
                       className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {otpSending ? '발송 중...' : '인증번호 발송'}
                     </button>
                   </div>
+
+                  {!signupClinicPhone.trim() ? (
+                    <p className="mt-2 text-sm text-slate-500">
+                      먼저 휴대폰 번호를 입력해주세요.
+                    </p>
+                  ) : !signupPhoneE164 ? (
+                    <p className="mt-2 text-sm text-red-500">
+                      올바른 휴대폰 번호 형식으로 입력해주세요.
+                    </p>
+                  ) : !recaptchaVerified ? (
+                    <p className="mt-2 text-sm text-slate-500">
+                      아래 "로봇이 아닙니다"를 먼저 체크해주세요.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-sm text-emerald-600">
+                      인증번호를 발송할 수 있습니다.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    본인 확인 <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    className={`overflow-hidden rounded-2xl border p-4 transition ${
+                      recaptchaVerified
+                        ? 'border-emerald-200 bg-emerald-50'
+                        : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    <div id={recaptchaContainerId} />
+                  </div>
+
+                  {recaptchaVerified ? (
+                    <p className="mt-2 text-sm font-semibold text-emerald-600">
+                      로봇 확인이 완료되었습니다.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-500">
+                      휴대폰 인증을 위해 "로봇이 아닙니다"를 먼저 체크해주세요.
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -898,7 +933,8 @@ export default function LoginPage() {
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="문자로 받은 6자리 코드"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500"
+                      disabled={!otpSent}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                     />
                     <button
                       type="button"
@@ -914,14 +950,16 @@ export default function LoginPage() {
                     <div className="mt-3 text-sm font-semibold text-emerald-600">
                       휴대폰 인증이 완료되었습니다.
                     </div>
-                  ) : (
+                  ) : otpSent ? (
                     <div className="mt-3 text-sm text-slate-500">
-                      인증번호 발송 후 6자리 코드를 입력해주세요.
+                      인증번호가 발송되었습니다. 문자로 받은 6자리 코드를 입력해주세요.
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-sm text-slate-400">
+                      먼저 휴대폰 번호 입력과 로봇 확인을 완료한 뒤 인증번호를 발송해주세요.
                     </div>
                   )}
                 </div>
-
-                <div id={recaptchaContainerId} className="overflow-hidden rounded-2xl" />
 
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
