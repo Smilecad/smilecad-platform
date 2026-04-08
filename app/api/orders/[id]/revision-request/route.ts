@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedServerUser } from '@/lib/auth-server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createOrderHistory } from '@/lib/orders/history'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -58,6 +59,14 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 500 }
       )
     }
+
+    await createOrderHistory({
+      orderId: id,
+      status: '수정 요청 중',
+      title: '수정 요청 등록',
+      description: note || '치과에 수정 요청을 보냈습니다.',
+      createdBy: user.id,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

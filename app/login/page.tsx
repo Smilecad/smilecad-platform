@@ -1,8 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import { firebaseAuth } from '@/lib/firebase'
+import {
+  ConfirmationResult,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  signOut as firebaseSignOut,
+} from 'firebase/auth'
 
 const supabase = createClient()
 
@@ -11,13 +18,22 @@ type AuthMode = 'login' | 'signup'
 type ProfileRow = {
   id: string
   role: string
+  login_id?: string | null
   clinic_name: string | null
   clinic_address?: string | null
   clinic_phone?: string | null
 }
 
+declare global {
+  interface Window {
+    recaptchaVerifier?: RecaptchaVerifier
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter()
+  const recaptchaContainerId = 'firebase-recaptcha-container'
+  const recaptchaInitializedRef = useRef(false)
 
   const [mode, setMode] = useState<AuthMode>('login')
   const [loading, setLoading] = useState(false)
@@ -25,15 +41,29 @@ export default function LoginPage() {
   const [message, setMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
-  const [loginEmail, setLoginEmail] = useState('')
+  const [loginId, setLoginId] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
 
+  const [signupLoginId, setSignupLoginId] = useState('')
   const [signupClinicName, setSignupClinicName] = useState('')
   const [signupClinicAddress, setSignupClinicAddress] = useState('')
   const [signupClinicPhone, setSignupClinicPhone] = useState('')
-  const [signupEmail, setSignupEmail] = useState('')
+  const [signupClinicEmail, setSignupClinicEmail] = useState('')
   const [signupPassword, setSignupPassword] = useState('')
   const [signupPasswordConfirm, setSignupPasswordConfirm] = useState('')
+
+  const [otpCode, setOtpCode] = useState('')
+  const [otpSending, setOtpSending] = useState(false)
+  const [otpVerifying, setOtpVerifying] = useState(false)
+  const [otpSent, setOtpSent] = useState(false)
+  const [phoneVerified, setPhoneVerified] = useState(false)
+  const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('')
+  const [confirmationResult, setConfirmationResult] =
+    useState<ConfirmationResult | null>(null)
+
+  const [checkingLoginId, setCheckingLoginId] = useState(false)
+  const [loginIdChecked, setLoginIdChecked] = useState(false)
+  const [loginIdAvailable, setLoginIdAvailable] = useState(false)
 
   useEffect(() => {
     const checkSession = async () => {
@@ -54,28 +84,144 @@ export default function LoginPage() {
     checkSession()
   }, [router])
 
+  useEffect(() => {
+    if (mode !== 'signup') {
+      return
+    }
+
+    if (recaptchaInitializedRef.current) {
+      return
+    }
+
+    const initRecaptcha = async () => {
+      const container = document.getElementById(recaptchaContainerId)
+      if (!container) return
+
+      try {
+        window.recaptchaVerifier = new RecaptchaVerifier(
+          firebaseAuth,
+          recaptchaContainerId,
+          {
+            size: 'normal',
+            callback: () => {
+              setMessage('reCAPTCHA 확인이 완료되었습니다. 인증번호를 발송해주세요.')
+            },
+          }
+        )
+
+        await window.recaptchaVerifier.render()
+        recaptchaInitializedRef.current = true
+      } catch (error) {
+        const msg =
+          error instanceof Error
+            ? error.message
+            : 'reCAPTCHA 초기화 중 오류가 발생했습니다.'
+        setErrorMessage(msg)
+      }
+    }
+
+    initRecaptcha()
+
+    return () => {
+      // signup -> login 탭 전환 시 재생성 문제를 막기 위해 clear는 하지 않음
+      // 페이지 unmount 시 브라우저가 정리하도록 둔다.
+    }
+  }, [mode])
+
   const resetMessages = () => {
     setMessage('')
     setErrorMessage('')
   }
 
-  const ensureProfileAfterLogin = async (userId: string, email: string) => {
+  const resetPhoneVerification = () => {
+    setOtpCode('')
+    setOtpSent(false)
+    setPhoneVerified(false)
+    setVerifiedPhoneE164('')
+    setConfirmationResult(null)
+
+    if (firebaseAuth.currentUser) {
+      void firebaseSignOut(firebaseAuth)
+    }
+  }
+
+  const resetLoginIdCheck = () => {
+    setLoginIdChecked(false)
+    setLoginIdAvailable(false)
+  }
+
+  const formatPhoneForDisplay = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 11)
+
+    if (digits.length <= 3) return digits
+    if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
+  }
+
+  const toKoreanPhoneE164 = (value: string) => {
+    const digits = value.replace(/\D/g, '')
+
+    if (digits.startsWith('82')) {
+      if (digits.length < 11 || digits.length > 12) return null
+      return `+${digits}`
+    }
+
+    if (!digits.startsWith('0')) return null
+    if (digits.length < 10 || digits.length > 11) return null
+
+    return `+82${digits.slice(1)}`
+  }
+
+  const normalizeLoginId = (value: string) => value.trim().toLowerCase()
+
+  const isValidLoginId = (value: string) => {
+    return /^[a-zA-Z0-9._-]{4,20}$/.test(value)
+  }
+
+  const toAuthEmailFromLoginId = (value: string) => {
+    const normalized = normalizeLoginId(value)
+    if (!normalized) return ''
+    return `${normalized}@smilecad.local`
+  }
+
+  const isValidEmail = (value: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  }
+
+  const signupPhoneE164 = useMemo(() => {
+    return toKoreanPhoneE164(signupClinicPhone)
+  }, [signupClinicPhone])
+
+  const resolvedSignupAuthEmail = useMemo(() => {
+    const normalized = normalizeLoginId(signupLoginId)
+
+    if (!isValidLoginId(normalized)) {
+      return null
+    }
+
+    return toAuthEmailFromLoginId(normalized)
+  }, [signupLoginId])
+
+  const ensureProfileAfterLogin = async (userId: string, fallbackLoginId: string) => {
     const { data: existingProfile, error: profileFetchError } = await supabase
       .from('profiles')
-      .select('id, role, clinic_name, clinic_address, clinic_phone')
+      .select('id, role, login_id, clinic_name, clinic_address, clinic_phone')
       .eq('id', userId)
-      .maybeSingle<ProfileRow>()
+      .maybeSingle()
 
     if (profileFetchError) {
       throw new Error(profileFetchError.message)
     }
 
-    if (!existingProfile) {
-      const fallbackClinicName = email.split('@')[0] || '치과'
+    const profile = existingProfile as ProfileRow | null
+
+    if (!profile) {
+      const fallbackClinicName = fallbackLoginId || '치과'
 
       const { error: insertProfileError } = await supabase.from('profiles').insert({
         id: userId,
         role: 'clinic',
+        login_id: fallbackLoginId,
         clinic_name: fallbackClinicName,
         clinic_address: '',
         clinic_phone: '',
@@ -87,20 +233,79 @@ export default function LoginPage() {
     }
   }
 
+  const checkDuplicateLoginId = async () => {
+    resetMessages()
+
+    const normalizedLoginId = normalizeLoginId(signupLoginId)
+
+    if (!normalizedLoginId) {
+      setErrorMessage('아이디를 입력해주세요.')
+      resetLoginIdCheck()
+      return
+    }
+
+    if (!isValidLoginId(normalizedLoginId)) {
+      setErrorMessage('아이디는 4~20자의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.')
+      resetLoginIdCheck()
+      return
+    }
+
+    try {
+      setCheckingLoginId(true)
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('login_id', normalizedLoginId)
+        .maybeSingle()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      if (data) {
+        setLoginIdChecked(true)
+        setLoginIdAvailable(false)
+        setErrorMessage('이미 사용 중인 아이디입니다.')
+        return
+      }
+
+      setLoginIdChecked(true)
+      setLoginIdAvailable(true)
+      setMessage('사용 가능한 아이디입니다.')
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : '아이디 중복 확인 중 오류가 발생했습니다.'
+      setErrorMessage(msg)
+      resetLoginIdCheck()
+    } finally {
+      setCheckingLoginId(false)
+    }
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     resetMessages()
 
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setErrorMessage('이메일과 비밀번호를 입력해주세요.')
+    const normalizedLoginId = normalizeLoginId(loginId)
+
+    if (!normalizedLoginId || !loginPassword.trim()) {
+      setErrorMessage('아이디와 비밀번호를 입력해주세요.')
+      return
+    }
+
+    if (!isValidLoginId(normalizedLoginId)) {
+      setErrorMessage('아이디 형식이 올바르지 않습니다.')
       return
     }
 
     try {
       setLoading(true)
 
+      const authEmail = toAuthEmailFromLoginId(normalizedLoginId)
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail.trim(),
+        email: authEmail,
         password: loginPassword,
       })
 
@@ -113,22 +318,36 @@ export default function LoginPage() {
         throw new Error('로그인 사용자 정보를 확인할 수 없습니다.')
       }
 
-      await ensureProfileAfterLogin(user.id, user.email ?? loginEmail.trim())
+      await ensureProfileAfterLogin(user.id, normalizedLoginId)
 
       setMessage('로그인되었습니다. 대시보드로 이동합니다.')
       router.replace('/dashboard')
     } catch (error) {
-      const message =
+      const msg =
         error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.'
-      setErrorMessage(message)
+      setErrorMessage(msg)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSendOtp = async () => {
     resetMessages()
+
+    if (!signupLoginId.trim()) {
+      setErrorMessage('아이디를 입력해주세요.')
+      return
+    }
+
+    if (!isValidLoginId(normalizeLoginId(signupLoginId))) {
+      setErrorMessage('아이디는 4~20자의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.')
+      return
+    }
+
+    if (!loginIdChecked || !loginIdAvailable) {
+      setErrorMessage('아이디 중복 확인을 먼저 완료해주세요.')
+      return
+    }
 
     if (!signupClinicName.trim()) {
       setErrorMessage('치과명을 입력해주세요.')
@@ -141,12 +360,162 @@ export default function LoginPage() {
     }
 
     if (!signupClinicPhone.trim()) {
-      setErrorMessage('연락처를 입력해주세요.')
+      setErrorMessage('휴대폰 번호를 입력해주세요.')
       return
     }
 
-    if (!signupEmail.trim()) {
-      setErrorMessage('이메일을 입력해주세요.')
+    if (!signupPhoneE164) {
+      setErrorMessage('올바른 휴대폰 번호 형식으로 입력해주세요.')
+      return
+    }
+
+    if (signupClinicEmail.trim() && !isValidEmail(signupClinicEmail.trim())) {
+      setErrorMessage('치과 이메일 형식이 올바르지 않습니다.')
+      return
+    }
+
+    if (!window.recaptchaVerifier) {
+      setErrorMessage('reCAPTCHA가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
+      return
+    }
+
+    try {
+      setOtpSending(true)
+
+      const result = await signInWithPhoneNumber(
+        firebaseAuth,
+        signupPhoneE164,
+        window.recaptchaVerifier
+      )
+
+      setConfirmationResult(result)
+      setOtpSent(true)
+      setPhoneVerified(false)
+      setVerifiedPhoneE164('')
+      setOtpCode('')
+      setMessage('인증번호를 발송했습니다. 문자로 받은 6자리 코드를 입력해주세요.')
+    } catch (error) {
+      const rawMessage =
+        error instanceof Error ? error.message : '인증번호 발송 중 오류가 발생했습니다.'
+
+      if (rawMessage.toLowerCase().includes('too-many-requests')) {
+        setErrorMessage('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.')
+      } else if (rawMessage.toLowerCase().includes('invalid-phone-number')) {
+        setErrorMessage('휴대폰 번호 형식이 올바르지 않습니다.')
+      } else {
+        setErrorMessage(rawMessage)
+      }
+    } finally {
+      setOtpSending(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    resetMessages()
+
+    if (!confirmationResult) {
+      setErrorMessage('먼저 인증번호를 발송해주세요.')
+      return
+    }
+
+    if (!signupPhoneE164) {
+      setErrorMessage('올바른 휴대폰 번호를 입력해주세요.')
+      return
+    }
+
+    if (!otpCode.trim()) {
+      setErrorMessage('인증번호를 입력해주세요.')
+      return
+    }
+
+    try {
+      setOtpVerifying(true)
+
+      const credential = await confirmationResult.confirm(otpCode.trim())
+      const verifiedPhone = credential.user.phoneNumber
+
+      if (!verifiedPhone) {
+        throw new Error('인증된 휴대폰 번호를 확인할 수 없습니다.')
+      }
+
+      if (verifiedPhone !== signupPhoneE164) {
+        throw new Error('인증된 번호와 입력한 번호가 일치하지 않습니다.')
+      }
+
+      setPhoneVerified(true)
+      setVerifiedPhoneE164(verifiedPhone)
+      setMessage('휴대폰 인증이 완료되었습니다.')
+
+      await firebaseSignOut(firebaseAuth)
+    } catch (error) {
+      const rawMessage =
+        error instanceof Error ? error.message : '인증번호 확인 중 오류가 발생했습니다.'
+
+      if (rawMessage.toLowerCase().includes('invalid-verification-code')) {
+        setErrorMessage('인증번호가 올바르지 않습니다.')
+      } else if (rawMessage.toLowerCase().includes('code-expired')) {
+        setErrorMessage('인증번호가 만료되었습니다. 다시 발송해주세요.')
+      } else {
+        setErrorMessage(rawMessage)
+      }
+    } finally {
+      setOtpVerifying(false)
+    }
+  }
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    resetMessages()
+
+    const normalizedLoginId = normalizeLoginId(signupLoginId)
+
+    if (!normalizedLoginId) {
+      setErrorMessage('아이디를 입력해주세요.')
+      return
+    }
+
+    if (!isValidLoginId(normalizedLoginId)) {
+      setErrorMessage('아이디는 4~20자의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.')
+      return
+    }
+
+    if (!loginIdChecked || !loginIdAvailable) {
+      setErrorMessage('아이디 중복 확인을 먼저 완료해주세요.')
+      return
+    }
+
+    if (!signupClinicName.trim()) {
+      setErrorMessage('치과명을 입력해주세요.')
+      return
+    }
+
+    if (!signupClinicAddress.trim()) {
+      setErrorMessage('치과 주소를 입력해주세요.')
+      return
+    }
+
+    if (!signupClinicPhone.trim()) {
+      setErrorMessage('휴대폰 번호를 입력해주세요.')
+      return
+    }
+
+    if (!signupPhoneE164) {
+      setErrorMessage('올바른 휴대폰 번호 형식으로 입력해주세요.')
+      return
+    }
+
+    if (!phoneVerified || verifiedPhoneE164 !== signupPhoneE164) {
+      setErrorMessage('휴대폰 OTP 인증을 완료해야 회원가입할 수 있습니다.')
+      return
+    }
+
+    if (signupClinicEmail.trim() && !isValidEmail(signupClinicEmail.trim())) {
+      setErrorMessage('치과 이메일 형식이 올바르지 않습니다.')
+      return
+    }
+
+    if (!resolvedSignupAuthEmail) {
+      setErrorMessage('아이디 처리 중 오류가 발생했습니다.')
       return
     }
 
@@ -168,9 +537,36 @@ export default function LoginPage() {
     try {
       setLoading(true)
 
+      const { data: duplicateRow, error: duplicateCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('login_id', normalizedLoginId)
+        .maybeSingle()
+
+      if (duplicateCheckError) {
+        throw new Error(duplicateCheckError.message)
+      }
+
+      if (duplicateRow) {
+        setLoginIdChecked(true)
+        setLoginIdAvailable(false)
+        throw new Error('이미 사용 중인 아이디입니다.')
+      }
+
       const { data, error } = await supabase.auth.signUp({
-        email: signupEmail.trim(),
+        email: resolvedSignupAuthEmail,
         password: signupPassword,
+        options: {
+          data: {
+            login_id: normalizedLoginId,
+            clinic_name: signupClinicName.trim(),
+            clinic_address: signupClinicAddress.trim(),
+            clinic_phone: signupClinicPhone.trim(),
+            clinic_email: signupClinicEmail.trim() || null,
+            phone_verified: true,
+            role: 'clinic',
+          },
+        },
       })
 
       if (error) {
@@ -185,30 +581,35 @@ export default function LoginPage() {
       const { error: profileUpsertError } = await supabase.from('profiles').upsert({
         id: user.id,
         role: 'clinic',
+        login_id: normalizedLoginId,
         clinic_name: signupClinicName.trim(),
         clinic_address: signupClinicAddress.trim(),
         clinic_phone: signupClinicPhone.trim(),
       })
 
       if (profileUpsertError) {
+        if (profileUpsertError.message.toLowerCase().includes('duplicate key')) {
+          throw new Error('이미 사용 중인 아이디입니다.')
+        }
         throw new Error(profileUpsertError.message)
       }
 
-      setMessage(
-        '회원가입이 완료되었습니다. 이메일 인증을 사용하는 경우 인증 후 로그인해주세요.'
-      )
+      setMessage('회원가입이 완료되었습니다. 아이디와 비밀번호로 로그인해주세요.')
 
+      setSignupLoginId('')
       setSignupClinicName('')
       setSignupClinicAddress('')
       setSignupClinicPhone('')
-      setSignupEmail('')
+      setSignupClinicEmail('')
       setSignupPassword('')
       setSignupPasswordConfirm('')
+      resetPhoneVerification()
+      resetLoginIdCheck()
       setMode('login')
     } catch (error) {
-      const message =
+      const msg =
         error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.'
-      setErrorMessage(message)
+      setErrorMessage(msg)
     } finally {
       setLoading(false)
     }
@@ -294,8 +695,8 @@ export default function LoginPage() {
               </h2>
               <p className="mt-3 text-base leading-7 text-slate-500">
                 {mode === 'login'
-                  ? '계정에 로그인하여 주문 플랫폼을 시작하세요.'
-                  : '치과 정보를 등록하고 주문 플랫폼 계정을 생성하세요.'}
+                  ? '아이디와 비밀번호로 로그인하여 주문 플랫폼을 시작하세요.'
+                  : '치과 정보를 등록하고 같은 페이지에서 휴대폰 인증 후 계정을 생성하세요.'}
               </p>
             </div>
 
@@ -346,15 +747,15 @@ export default function LoginPage() {
               <form onSubmit={handleLogin} className="mt-8 space-y-5">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    이메일
+                    아이디
                   </label>
                   <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="예: clinic@example.com"
+                    type="text"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
+                    placeholder="아이디를 입력하세요"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                    autoComplete="email"
+                    autoComplete="username"
                   />
                 </div>
 
@@ -398,7 +799,41 @@ export default function LoginPage() {
               <form onSubmit={handleSignup} className="mt-8 space-y-5">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    치과명
+                    아이디 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={signupLoginId}
+                      onChange={(e) => {
+                        setSignupLoginId(e.target.value)
+                        resetLoginIdCheck()
+                        resetMessages()
+                      }}
+                      placeholder="4~20자 영문, 숫자, . _ - 사용 가능"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={checkDuplicateLoginId}
+                      disabled={checkingLoginId}
+                      className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {checkingLoginId ? '확인 중...' : '중복 확인'}
+                    </button>
+                  </div>
+
+                  {loginIdChecked && loginIdAvailable ? (
+                    <p className="mt-2 text-sm font-semibold text-emerald-600">
+                      사용 가능한 아이디입니다.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    치과명 <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -406,12 +841,13 @@ export default function LoginPage() {
                     onChange={(e) => setSignupClinicName(e.target.value)}
                     placeholder="예: 스마일치과"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    치과 주소
+                    치과 주소 <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -419,34 +855,89 @@ export default function LoginPage() {
                     onChange={(e) => setSignupClinicAddress(e.target.value)}
                     placeholder="예: 서울시 강남구 테헤란로 123"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
+                    required
                   />
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    연락처
+                    휴대폰 번호 <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={signupClinicPhone}
-                    onChange={(e) => setSignupClinicPhone(e.target.value)}
-                    placeholder="예: 02-1234-5678"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                  />
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={signupClinicPhone}
+                      onChange={(e) => {
+                        const nextValue = formatPhoneForDisplay(e.target.value)
+                        setSignupClinicPhone(nextValue)
+                        resetPhoneVerification()
+                        resetMessages()
+                      }}
+                      placeholder="예: 010-1234-5678"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={otpSending}
+                      className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {otpSending ? '발송 중...' : '인증번호 발송'}
+                    </button>
+                  </div>
                 </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    인증번호 입력
+                  </label>
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="문자로 받은 6자리 코드"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      disabled={otpVerifying || phoneVerified || !otpSent}
+                      className="shrink-0 rounded-2xl bg-blue-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                    >
+                      {phoneVerified ? '인증 완료' : otpVerifying ? '확인 중...' : 'OTP 확인'}
+                    </button>
+                  </div>
+
+                  {phoneVerified ? (
+                    <div className="mt-3 text-sm font-semibold text-emerald-600">
+                      휴대폰 인증이 완료되었습니다.
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-sm text-slate-500">
+                      인증번호 발송 후 6자리 코드를 입력해주세요.
+                    </div>
+                  )}
+                </div>
+
+                <div id={recaptchaContainerId} className="overflow-hidden rounded-2xl" />
 
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    이메일(아이디)
+                    치과 이메일 (선택)
                   </label>
                   <input
                     type="email"
-                    value={signupEmail}
-                    onChange={(e) => setSignupEmail(e.target.value)}
+                    value={signupClinicEmail}
+                    onChange={(e) => setSignupClinicEmail(e.target.value)}
                     placeholder="예: clinic@example.com"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
                     autoComplete="email"
                   />
+                  <p className="mt-2 text-sm text-slate-500">
+                    치과 대표 이메일이 있는 경우에만 입력하세요. 로그인 아이디와는 별개입니다.
+                  </p>
                 </div>
 
                 <div>
@@ -479,7 +970,7 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !phoneVerified || !loginIdChecked || !loginIdAvailable}
                   className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                 >
                   {loading ? '회원가입 처리 중...' : '회원가입'}

@@ -24,15 +24,17 @@ type OrderItem = {
   gender: string
   birth_date: string | null
   product_type: string
-  selected_teeth: string[] | null
+  selected_teeth: string[] | string | null
   delivery_date: string | null
   thickness: string | null
   jig_required: string | null
   request_note: string | null
-  scan_file_names: string[] | null
-  scan_file_paths: string[] | null
-  design_file_names: string[] | null
-  design_file_paths: string[] | null
+  scan_file_names: string[] | string | null
+  scan_file_paths: string[] | string | null
+  design_file_names: string[] | string | null
+  design_file_paths: string[] | string | null
+  resubmission_file_names: string[] | string | null
+  resubmission_file_paths: string[] | string | null
   status: OrderStatus
   created_at: string
   user_id: string
@@ -110,6 +112,8 @@ export default function OrdersPage() {
             scan_file_paths,
             design_file_names,
             design_file_paths,
+            resubmission_file_names,
+            resubmission_file_paths,
             status,
             created_at,
             user_id,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedServerUser } from '@/lib/auth-server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createOrderHistory } from '@/lib/orders/history'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -48,7 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
-      .select('id, user_id, is_canceled, status')
+      .select('id, user_id, is_canceled')
       .eq('id', id)
       .single()
 
@@ -92,6 +93,14 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 500 }
       )
     }
+
+    await createOrderHistory({
+      orderId: id,
+      status: '주문 재접수',
+      title: '재접수 파일 업로드',
+      description: '치과에서 수정본을 업로드하고 주문을 재접수했습니다.',
+      createdBy: user.id,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedServerUser } from '@/lib/auth-server'
 import { supabaseAdmin } from '@/lib/supabase/admin'
+import { createOrderHistory } from '@/lib/orders/history'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -11,7 +12,7 @@ const ALLOWED_STATUSES = ['접수 대기', '디자인 작업중', '수정 요청
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params
-    const { profile } = await getAuthenticatedServerUser(request)
+    const { user, profile } = await getAuthenticatedServerUser(request)
 
     if (profile.role !== 'admin') {
       return NextResponse.json(
@@ -32,7 +33,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
-      .select('id, is_canceled')
+      .select('id, is_canceled, status')
       .eq('id', id)
       .single()
 
@@ -58,24 +59,27 @@ export async function PATCH(request: Request, context: RouteContext) {
       updatePayload.admin_revision_requested = false
     }
 
-    const { data: updatedOrder, error: updateError } = await supabaseAdmin
+    const { error: updateError } = await supabaseAdmin
       .from('orders')
       .update(updatePayload)
       .eq('id', id)
-      .select('id, status')
-      .single()
 
-    if (updateError || !updatedOrder) {
+    if (updateError) {
       return NextResponse.json(
-        { error: updateError?.message || '주문 상태 변경에 실패했습니다.' },
+        { error: updateError.message },
         { status: 500 }
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      order: updatedOrder,
+    await createOrderHistory({
+      orderId: id,
+      status,
+      title: '상태 변경',
+      description: `주문 상태가 "${status}"(으)로 변경되었습니다.`,
+      createdBy: user.id,
     })
+
+    return NextResponse.json({ success: true })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : '주문 상태 변경 중 오류가 발생했습니다.'
