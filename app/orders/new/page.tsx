@@ -1,8 +1,18 @@
 'use client'
 
-import { ChangeEvent, DragEvent, FormEvent, useMemo, useRef, useState } from 'react'
+import {
+  ChangeEvent,
+  DragEvent,
+  FormEvent,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import AppTopNav from '@/app/components/AppTopNav'
 
 const supabase = createClient()
 
@@ -44,41 +54,6 @@ function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ')
 }
 
-function LogoBadge() {
-  return (
-    <div className="inline-flex items-center rounded-[18px] border border-[#d7deea] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <span className="text-[14px] font-extrabold tracking-[0.28em] text-[#2455ff]">
-        SMILECAD PLATFORM
-      </span>
-    </div>
-  )
-}
-
-function TopActionButton({
-  label,
-  active = false,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'rounded-[18px] border px-7 py-4 text-[15px] font-bold transition',
-        active
-          ? 'border-[#0f1b3d] bg-[#0f1b3d] text-white shadow-[0_10px_25px_rgba(15,27,61,0.18)]'
-          : 'border-[#cfd7e3] bg-white text-[#344054] hover:bg-[#f8fafc]'
-      )}
-    >
-      {label}
-    </button>
-  )
-}
-
 function SectionTitle({ title }: { title: string }) {
   return (
     <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
@@ -92,7 +67,7 @@ function FieldLabel({
   children,
 }: {
   required?: boolean
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <div className="text-[14px] font-bold text-[#4b5565]">
@@ -107,11 +82,13 @@ function TextInput({
   onChange,
   placeholder = '',
   type = 'text',
+  disabled = false,
 }: {
   value: string
   onChange: (value: string) => void
   placeholder?: string
   type?: string
+  disabled?: boolean
 }) {
   return (
     <input
@@ -119,7 +96,11 @@ function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
+      disabled={disabled}
+      className={classNames(
+        'h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
+        disabled && 'bg-[#f8fafc] text-[#667085]'
+      )}
     />
   )
 }
@@ -379,6 +360,7 @@ export default function NewOrderPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
+  const [loadingClinicInfo, setLoadingClinicInfo] = useState(true)
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState(false)
 
@@ -386,6 +368,7 @@ export default function NewOrderPage() {
   const [birthDate, setBirthDate] = useState('')
   const [gender, setGender] = useState('')
   const [clinicName, setClinicName] = useState('')
+  const [clinicAddress, setClinicAddress] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [requestNote, setRequestNote] = useState('')
 
@@ -395,6 +378,58 @@ export default function NewOrderPage() {
   const [jigRequired, setJigRequired] = useState('No')
 
   const [files, setFiles] = useState<File[]>([])
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadClinicInfo = async () => {
+      try {
+        setLoadingClinicInfo(true)
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (userError || !user) {
+          if (mounted) {
+            router.replace('/login')
+          }
+          return
+        }
+
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('clinic_name, clinic_address')
+          .eq('id', user.id)
+          .single()
+
+        if (profileError) {
+          throw new Error('치과 정보를 불러오지 못했습니다.')
+        }
+
+        if (mounted) {
+          setClinicName(profileData?.clinic_name ?? '')
+          setClinicAddress(profileData?.clinic_address ?? '')
+        }
+      } catch (err) {
+        console.error(err)
+        if (mounted) {
+          setError(err instanceof Error ? err.message : '치과 정보를 불러오는 중 오류가 발생했습니다.')
+        }
+      } finally {
+        if (mounted) {
+          setLoadingClinicInfo(false)
+        }
+      }
+    }
+
+    loadClinicInfo()
+
+    return () => {
+      mounted = false
+    }
+  }, [router])
 
   const selectedTeethSummary = useMemo(() => {
     if (selectedTeeth.length === 0) return '선택 전'
@@ -461,11 +496,6 @@ export default function NewOrderPage() {
     setFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.replace('/login')
-  }
-
   const uploadFiles = async (orderId: string, nextFiles: File[]) => {
     if (nextFiles.length === 0) {
       return {
@@ -498,6 +528,11 @@ export default function NewOrderPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
+    if (loadingClinicInfo) {
+      setError('치과 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.')
+      return
+    }
+
     if (!patientName.trim()) {
       setError('환자 명을 입력해주세요.')
       return
@@ -505,6 +540,11 @@ export default function NewOrderPage() {
 
     if (!clinicName.trim()) {
       setError('치과명을 입력해주세요.')
+      return
+    }
+
+    if (!clinicAddress.trim()) {
+      setError('치과 주소를 입력해주세요.')
       return
     }
 
@@ -547,20 +587,21 @@ export default function NewOrderPage() {
         return
       }
 
-      const { data: profileData } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('role, clinic_name')
+        .select('role')
         .eq('id', user.id)
         .single()
 
-      const fallbackClinicName = clinicName.trim() || profileData?.clinic_name || ''
-      const tempOrderNumber = `TEMP-${Date.now()}`
+      if (profileError) {
+        throw new Error('회원 정보를 불러오지 못했습니다.')
+      }
 
       const { data: insertedOrder, error: insertError } = await supabase
         .from('orders')
         .insert({
-          order_number: tempOrderNumber,
-          clinic_name: fallbackClinicName,
+          clinic_name: clinicName.trim(),
+          clinic_address: clinicAddress.trim(),
           patient_name: patientName.trim(),
           gender: gender || null,
           birth_date: birthDate || null,
@@ -625,14 +666,7 @@ export default function NewOrderPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
       <div className="mx-auto w-full max-w-[1480px]">
-        <div className="mb-8 flex items-start justify-between">
-          <LogoBadge />
-
-          <div className="flex items-center gap-4">
-            <TopActionButton label="주문 목록" active onClick={() => router.push('/orders')} />
-            <TopActionButton label="로그아웃" onClick={handleLogout} />
-          </div>
-        </div>
+        <AppTopNav current="orders-new" />
 
         <div className="overflow-hidden rounded-[28px] border border-[#d9e0ea] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <div className="border-b border-[#e8edf5] bg-[#fbfcfe] px-8 py-6">
@@ -657,10 +691,10 @@ export default function NewOrderPage() {
                 <button
                   type="submit"
                   form="new-order-form"
-                  disabled={submitting}
+                  disabled={submitting || loadingClinicInfo}
                   className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:opacity-60"
                 >
-                  {submitting ? '저장 중...' : '보내기'}
+                  {submitting ? '저장 중...' : loadingClinicInfo ? '정보 불러오는 중...' : '보내기'}
                 </button>
               </div>
             </div>
@@ -730,7 +764,38 @@ export default function NewOrderPage() {
                 <div className="border-t border-[#eef2f6] pt-5">
                   <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                     <FieldLabel required>치과명</FieldLabel>
-                    <TextInput value={clinicName} onChange={setClinicName} />
+                    <div>
+                      <TextInput
+                        value={clinicName}
+                        onChange={setClinicName}
+                        disabled={loadingClinicInfo}
+                        placeholder={loadingClinicInfo ? '치과명 불러오는 중...' : '치과명을 입력하세요'}
+                      />
+                      <div className="mt-2 text-[12px] text-[#98a2b3]">
+                        회원가입 시 등록된 치과명이 자동 입력되며, 필요하면 수정할 수 있습니다.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-[#eef2f6] pt-5">
+                  <div className="grid grid-cols-[82px_1fr] items-start gap-4">
+                    <FieldLabel required>치과주소</FieldLabel>
+                    <div>
+                      <textarea
+                        value={clinicAddress}
+                        onChange={(e) => setClinicAddress(e.target.value)}
+                        disabled={loadingClinicInfo}
+                        placeholder={loadingClinicInfo ? '치과주소 불러오는 중...' : '치과 주소를 입력하세요'}
+                        className={classNames(
+                          'min-h-[96px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] outline-none transition focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
+                          loadingClinicInfo && 'bg-[#f8fafc] text-[#667085]'
+                        )}
+                      />
+                      <div className="mt-2 text-[12px] text-[#98a2b3]">
+                        회원가입 시 등록된 주소가 자동 입력되며, 필요하면 수정할 수 있습니다.
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -810,7 +875,9 @@ export default function NewOrderPage() {
 
               <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4">
                 <div className="text-[17px] font-extrabold text-[#263142]">지그 제작 여부 *</div>
-                <div className="mt-2 text-[13px] font-bold text-red-500">(제작시 5000원 추가 비용 발생)</div>
+                <div className="mt-2 text-[13px] font-bold text-red-500">
+                  (제작시 5000원 추가 비용 발생)
+                </div>
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-3">
@@ -886,9 +953,7 @@ export default function NewOrderPage() {
                 </label>
               </div>
 
-              {error && (
-                <div className="px-6 pb-6 text-sm font-semibold text-red-600">{error}</div>
-              )}
+              {error && <div className="px-6 pb-6 text-sm font-semibold text-red-600">{error}</div>}
             </div>
 
             <div className="overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
@@ -905,7 +970,7 @@ export default function NewOrderPage() {
 
                   <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center">
                     <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">치아 번호</div>
-                    <div className="text-[15px] font-bold break-words text-[#475467]">
+                    <div className="break-words text-[15px] font-bold text-[#475467]">
                       {selectedTeethSummary}
                     </div>
                   </div>

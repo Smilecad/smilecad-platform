@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import AppTopNav from '@/app/components/AppTopNav'
 
 const supabase = createClient()
 
@@ -210,11 +211,6 @@ export default function OrdersPage() {
     })
   }, [orders, searchKeyword, isAdmin, adminQuickFilter])
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.replace('/login')
-  }
-
   const goToOrderDetail = (orderId: string) => {
     router.push(`/orders/${orderId}`)
   }
@@ -317,6 +313,8 @@ export default function OrdersPage() {
   return (
     <main className="min-h-screen bg-[#f5f7fb] px-4 py-6 md:px-6">
       <div className="mx-auto max-w-7xl">
+        <AppTopNav current="orders" />
+
         <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 md:px-8">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -379,13 +377,6 @@ export default function OrdersPage() {
                     신규 주문 등록
                   </button>
                 )}
-
-                <button
-                  onClick={handleLogout}
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-                >
-                  로그아웃
-                </button>
               </div>
             </div>
           </div>

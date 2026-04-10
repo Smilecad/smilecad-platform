@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import AppTopNav from '@/app/components/AppTopNav'
 
 const supabase = createClient()
 
@@ -27,6 +28,7 @@ type OrderItem = {
   id: string
   order_number: string
   clinic_name: string
+  clinic_address: string | null
   patient_name: string
   gender: string
   birth_date: string | null
@@ -173,41 +175,6 @@ function formatDateTime(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
-}
-
-function LogoBadge() {
-  return (
-    <div className="inline-flex items-center rounded-[18px] border border-[#d7deea] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <span className="text-[14px] font-extrabold tracking-[0.28em] text-[#2455ff]">
-        SMILECAD PLATFORM
-      </span>
-    </div>
-  )
-}
-
-function TopActionButton({
-  label,
-  active = false,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'rounded-[18px] border px-7 py-4 text-[15px] font-bold transition',
-        active
-          ? 'border-[#0f1b3d] bg-[#0f1b3d] text-white shadow-[0_10px_25px_rgba(15,27,61,0.18)]'
-          : 'border-[#cfd7e3] bg-white text-[#344054] hover:bg-[#f8fafc]'
-      )}
-    >
-      {label}
-    </button>
-  )
 }
 
 function SectionTitle({
@@ -478,7 +445,12 @@ function TeethChart({
 }) {
   const hasPrimarySelection = selectedTeeth.some((tooth) => {
     const normalized = String(tooth)
-    return normalized.startsWith('5') || normalized.startsWith('6') || normalized.startsWith('7') || normalized.startsWith('8')
+    return (
+      normalized.startsWith('5') ||
+      normalized.startsWith('6') ||
+      normalized.startsWith('7') ||
+      normalized.startsWith('8')
+    )
   })
 
   const renderPermanentGroup = (numbers: number[], bottom = false) => (
@@ -515,10 +487,7 @@ function TeethChart({
 
   return (
     <div className="rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-      <SectionTitle
-        title="치식 정보"
-        right={<ValueBadge value={productType || '-'} />}
-      />
+      <SectionTitle title="치식 정보" right={<ValueBadge value={productType || '-'} />} />
 
       <div className="px-6 py-6">
         <div className="grid grid-cols-[1fr_24px_1fr] items-start">
@@ -590,6 +559,7 @@ function SummaryInfo({
   createdAt,
   deliveryDate,
   clinicName,
+  clinicAddress,
   thickness,
   jigRequired,
 }: {
@@ -598,6 +568,7 @@ function SummaryInfo({
   createdAt: string | null
   deliveryDate: string | null
   clinicName: string
+  clinicAddress: string | null
   thickness: string | null
   jigRequired: string | null
 }) {
@@ -625,6 +596,11 @@ function SummaryInfo({
 
           <div className="font-bold text-[#98a2b3]">희망 완료일</div>
           <div className="font-semibold text-[#344054]">{formatDate(deliveryDate)}</div>
+
+          <div className="font-bold text-[#98a2b3]">치과 주소</div>
+          <div className="col-span-3 font-semibold break-all text-[#344054]">
+            {clinicAddress || '-'}
+          </div>
 
           <div className="font-bold text-[#98a2b3]">두께</div>
           <div className="font-semibold text-[#344054]">
@@ -773,6 +749,7 @@ export default function OrderDetailPage() {
             id,
             order_number,
             clinic_name,
+            clinic_address,
             patient_name,
             gender,
             birth_date,
@@ -981,6 +958,7 @@ export default function OrderDetailPage() {
         id,
         order_number,
         clinic_name,
+        clinic_address,
         patient_name,
         gender,
         birth_date,
@@ -1450,12 +1428,7 @@ export default function OrderDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
       <div className="mx-auto w-full max-w-[1480px]">
-        <div className="mb-8 flex items-start justify-between">
-          <LogoBadge />
-          <div className="flex items-center gap-4">
-            <TopActionButton label="주문 목록" active onClick={() => router.push('/orders')} />
-          </div>
-        </div>
+        <AppTopNav current="orders" />
 
         <div className="mb-6 rounded-[28px] border border-[#d9e0ea] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <div className="px-8 py-6">
@@ -1582,6 +1555,7 @@ export default function OrderDetailPage() {
               createdAt={order.created_at}
               deliveryDate={order.delivery_date}
               clinicName={order.clinic_name}
+              clinicAddress={order.clinic_address}
               thickness={order.thickness}
               jigRequired={order.jig_required}
             />
