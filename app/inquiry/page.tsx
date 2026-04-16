@@ -1,314 +1,140 @@
+// app/inquiry/page.tsx
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { useSession } from 'next-auth/react'
 import AppTopNav from '@/app/components/AppTopNav'
-
-const supabase = createClient()
-
-type ProfileRow = {
-  id: string
-  role: string
-  clinic_name: string | null
-  clinic_address: string | null
-  clinic_phone: string | null
-}
-
-function classNames(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ')
-}
-
-function SectionTitle({ title }: { title: string }) {
-  return (
-    <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-      {title}
-    </div>
-  )
-}
-
-function FieldLabel({
-  required = false,
-  children,
-}: {
-  required?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className="mb-2 text-[14px] font-bold text-[#4b5565]">
-      {required && <span className="mr-1 text-[#ef6b5a]">*</span>}
-      {children}
-    </div>
-  )
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder = '',
-  disabled = false,
-  readOnly = false,
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  disabled?: boolean
-  readOnly?: boolean
-}) {
-  return (
-    <input
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-      readOnly={readOnly}
-      className={classNames(
-        'h-12 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
-        (disabled || readOnly) && 'bg-[#f8fafc] text-[#667085]'
-      )}
-    />
-  )
-}
 
 export default function InquiryPage() {
   const router = useRouter()
+  const { data: session, status: sessionStatus } = useSession()
 
-  const [pageLoading, setPageLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [message, setMessage] = useState('')
-
-  const [profile, setProfile] = useState<ProfileRow | null>(null)
-
-  const [category, setCategory] = useState('일반 문의')
+  // 입력값 상태 관리
+  const [category, setCategory] = useState('시스템 및 오류 문의')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => {
-    const loadPage = async () => {
-      try {
-        setPageLoading(true)
-        setErrorMessage('')
-        setMessage('')
+  if (sessionStatus === 'loading') {
+    return <div className="flex min-h-screen items-center justify-center font-bold text-slate-500">로딩 중...</div>
+  }
 
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser()
+  if (sessionStatus === 'unauthenticated') {
+    router.replace('/login')
+    return null
+  }
 
-        if (userError || !user) {
-          router.replace('/login')
-          return
-        }
+  // 🚀 제출 버튼을 눌렀을 때 실행되는 함수
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault() // 새로고침 방지
 
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, role, clinic_name, clinic_address, clinic_phone')
-          .eq('id', user.id)
-          .single()
-
-        if (profileError || !profileData) {
-          throw new Error('프로필 정보를 불러오지 못했습니다.')
-        }
-
-        setProfile(profileData as ProfileRow)
-      } catch (err) {
-        console.error(err)
-        setErrorMessage(err instanceof Error ? err.message : '페이지 로딩 중 오류가 발생했습니다.')
-      } finally {
-        setPageLoading(false)
-      }
-    }
-
-    loadPage()
-  }, [router])
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    setErrorMessage('')
-    setMessage('')
-
-    if (!title.trim()) {
-      setErrorMessage('문의 제목을 입력해주세요.')
-      return
-    }
-
-    if (!content.trim()) {
-      setErrorMessage('문의 내용을 입력해주세요.')
-      return
-    }
-
-    if (!profile) {
-      setErrorMessage('프로필 정보를 확인할 수 없습니다.')
+    if (!title.trim() || !content.trim()) {
+      alert('제목과 내용을 모두 작성해주세요.')
       return
     }
 
     try {
-      setSubmitting(true)
-
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError || !session?.access_token) {
-        throw new Error('로그인 토큰을 확인할 수 없습니다. 다시 로그인해주세요.')
-      }
-
-      const res = await fetch('/api/inquiries', {
+      setIsSubmitting(true)
+      const res = await fetch('/api/inquiry', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          email: session?.user?.email,
           category,
-          title: title.trim(),
-          content: content.trim(),
-        }),
+          title,
+          content
+        })
       })
 
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok) {
-        throw new Error(data.error || '문의 등록에 실패했습니다.')
+      if (res.ok) {
+        alert('문의가 성공적으로 접수되었습니다. 담당자가 확인 후 답변 드리겠습니다.')
+        // 등록 후 문의 내역 페이지로 이동 (임시로 대시보드로 이동)
+        router.push('/dashboard') 
+      } else {
+        const data = await res.json()
+        alert(data.error || '문의 접수에 실패했습니다.')
       }
-
-      setTitle('')
-      setContent('')
-      setCategory('일반 문의')
-      setMessage('문의가 정상적으로 접수되었습니다.')
-    } catch (err) {
-      console.error(err)
-      setErrorMessage(err instanceof Error ? err.message : '문의 접수 중 오류가 발생했습니다.')
+    } catch (error) {
+      alert('네트워크 오류가 발생했습니다.')
     } finally {
-      setSubmitting(false)
+      setIsSubmitting(false)
     }
-  }
-
-  if (pageLoading) {
-    return (
-      <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
-        <div className="mx-auto w-full max-w-[1180px]">
-          <div className="rounded-[28px] border border-[#d9e0ea] bg-white px-8 py-10 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-            <div className="text-[15px] font-semibold text-[#667085]">문의 페이지를 불러오는 중입니다...</div>
-          </div>
-        </div>
-      </main>
-    )
   }
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
-      <div className="mx-auto w-full max-w-[1180px]">
+      <div className="mx-auto w-full max-w-[1000px]">
         <AppTopNav current="inquiry" />
 
-        <div className="overflow-hidden rounded-[28px] border border-[#d9e0ea] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-          <div className="border-b border-[#e8edf5] bg-[#fbfcfe] px-8 py-6">
-            <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">문의하기</div>
-            <div className="mt-2 text-[14px] text-[#98a2b3]">
-              문의 내용을 남겨주시면 확인 후 답변드리겠습니다.
-            </div>
+        {/* 상단 헤더 영역 */}
+        <div className="mb-8">
+          <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">
+            문의하기
           </div>
+          <div className="mt-2 text-[14px] text-[#98a2b3]">
+            시스템, 주문, 결제 등 궁금하신 점이나 불편한 점을 남겨주시면 신속하게 답변해 드립니다.
+          </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-[360px_1fr] gap-6 p-8">
-            <div className="overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <SectionTitle title="기본 정보" />
-
-              <div className="space-y-5 p-6">
-                <div>
-                  <FieldLabel>치과명</FieldLabel>
-                  <TextInput
-                    value={profile?.clinic_name || ''}
-                    onChange={() => {}}
-                    readOnly
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>치과 주소</FieldLabel>
-                  <textarea
-                    value={profile?.clinic_address || ''}
-                    readOnly
-                    className="min-h-[90px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-[#f8fafc] p-4 text-[14px] text-[#667085] outline-none"
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel>연락처</FieldLabel>
-                  <TextInput
-                    value={profile?.clinic_phone || ''}
-                    onChange={() => {}}
-                    readOnly
-                  />
-                </div>
-              </div>
+        {/* 입력 폼 영역 */}
+        <div className="rounded-[28px] border border-[#d9e0ea] bg-white p-10 shadow-[0_18px_45px_rgba(15,23,42,0.04)]">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+            
+            {/* 1. 카테고리 선택 */}
+            <div className="flex flex-col gap-3">
+              <label className="text-[14px] font-black text-[#1e293b]">문의 유형 <span className="text-red-500">*</span></label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full md:w-1/2 rounded-[14px] border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3.5 text-[15px] font-bold text-[#475467] outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              >
+                <option value="시스템 및 오류 문의">시스템 및 오류 문의</option>
+                <option value="주문 및 배송 관련">주문 및 배송 관련</option>
+                <option value="결제 및 정산 관련">결제 및 정산 관련</option>
+                <option value="기타 문의">기타 문의</option>
+              </select>
             </div>
 
-            <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <SectionTitle title="문의 내용" />
+            {/* 2. 제목 입력 */}
+            <div className="flex flex-col gap-3">
+              <label className="text-[14px] font-black text-[#1e293b]">제목 <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                placeholder="문의하실 내용의 제목을 입력해주세요."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-[14px] border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3.5 text-[15px] font-bold text-[#1f2937] outline-none transition placeholder:font-medium placeholder:text-[#94a3b8] focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              />
+            </div>
 
-              <div className="space-y-5 p-6">
-                <div>
-                  <FieldLabel required>문의 유형</FieldLabel>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="h-12 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
-                  >
-                    <option value="일반 문의">일반 문의</option>
-                    <option value="주문 문의">주문 문의</option>
-                    <option value="결제 문의">결제 문의</option>
-                    <option value="배송 문의">배송 문의</option>
-                    <option value="시스템 오류">시스템 오류</option>
-                    <option value="기타">기타</option>
-                  </select>
-                </div>
+            {/* 3. 내용 입력 */}
+            <div className="flex flex-col gap-3">
+              <label className="text-[14px] font-black text-[#1e293b]">상세 내용 <span className="text-red-500">*</span></label>
+              <textarea
+                placeholder="답변에 필요한 상세 정보를 구체적으로 적어주시면 더욱 빠르고 정확한 처리가 가능합니다."
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={8}
+                className="w-full resize-none rounded-[14px] border border-[#e2e8f0] bg-[#f8fafc] p-4 text-[15px] font-medium text-[#1f2937] outline-none transition placeholder:text-[#94a3b8] focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+              />
+            </div>
 
-                <div>
-                  <FieldLabel required>문의 제목</FieldLabel>
-                  <TextInput
-                    value={title}
-                    onChange={setTitle}
-                    placeholder="문의 제목을 입력해주세요."
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel required>문의 내용</FieldLabel>
-                  <textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="문의 내용을 자세히 입력해주세요."
-                    className="min-h-[280px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
-                  />
-                </div>
-
-                {message ? (
-                  <div className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                    {message}
-                  </div>
-                ) : null}
-
-                {errorMessage ? (
-                  <div className="rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                    {errorMessage}
-                  </div>
-                ) : null}
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:opacity-60"
-                  >
-                    {submitting ? '접수 중...' : '문의 접수'}
-                  </button>
-                </div>
-              </div>
+            {/* 4. 제출 버튼 */}
+            <div className="mt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className={`rounded-[14px] bg-[#3b82f6] px-10 py-4 text-[16px] font-black text-white transition ${
+                  isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#2563eb] shadow-[0_10px_24px_rgba(59,130,246,0.24)]'
+                }`}
+              >
+                {isSubmitting ? '접수 중...' : '문의 등록하기'}
+              </button>
             </div>
           </form>
         </div>
+
       </div>
     </main>
   )

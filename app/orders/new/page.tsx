@@ -1,364 +1,77 @@
+// app/orders/new/page.tsx
 'use client'
 
-import {
-  ChangeEvent,
-  DragEvent,
-  FormEvent,
-  ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { ChangeEvent, DragEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { useSession } from 'next-auth/react' 
 import AppTopNav from '@/app/components/AppTopNav'
 
-const supabase = createClient()
-
 type OrderStatus = '접수 대기' | '디자인 작업중' | '수정 요청 중' | '주문 재접수'
-type ProductType =
-  | 'NT-tainer'
-  | 'NT-spacer'
-  | 'NT-regainer'
-  | 'NT-lingual arch'
-  | 'NT-uprighter'
+type ProductType = 'NT-tainer' | 'NT-spacer' | 'NT-regainer' | 'NT-lingual arch' | 'NT-uprighter'
 
-const PRODUCT_TYPES: ProductType[] = [
-  'NT-tainer',
-  'NT-spacer',
-  'NT-regainer',
-  'NT-lingual arch',
-  'NT-uprighter',
-]
-
-const THICKNESS_OPTIONS = [
-  '0.011inch(0.30mm)',
-  '0.013inch(0.35mm)',
-  '0.015inch(0.40mm)',
-  '0.016inch(0.43mm)',
-  '0.021inch(0.55mm)',
-] as const
-
+const PRODUCT_TYPES: ProductType[] = ['NT-tainer', 'NT-spacer', 'NT-regainer', 'NT-lingual arch', 'NT-uprighter']
+const THICKNESS_OPTIONS = ['0.011inch(0.30mm)', '0.013inch(0.35mm)', '0.015inch(0.38mm)', '0.017inch(0.43mm)', '0.021inch(0.55mm)'] as const
 const PERMANENT_TOP = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]
 const PERMANENT_BOTTOM = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
-
 const PRIMARY_TOP = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65]
 const PRIMARY_BOTTOM = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
 
-function toToothKey(value: number) {
-  return String(value)
+const MAX_FILE_SIZE = 20 * 1024 * 1024 
+const MAX_FILE_COUNT = 5
+
+function toToothKey(value: number) { return String(value) }
+function classNames(...values: Array<string | false | null | undefined>) { return values.filter(Boolean).join(' ') }
+function toLocalDateString(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+function toCompactDateString(date: Date) { return toLocalDateString(date).replaceAll('-', '') }
+
+// 주말 제외 로직
+function isWeekend(date: Date) {
+  const day = date.getDay()
+  return day === 0 || day === 6
 }
 
-function classNames(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ')
+// 주말 및 공휴일 제외 로직
+function isBusinessDay(date: Date, holidays: Set<string>) {
+  if (isWeekend(date)) return false
+  return !holidays.has(toCompactDateString(date))
 }
 
-function SectionTitle({ title }: { title: string }) {
-  return (
-    <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-      {title}
-    </div>
-  )
+// 4영업일 계산기
+function addBusinessDaysInclusive(startDate: Date, businessDays: number, holidays: Set<string>) {
+  const current = new Date(startDate)
+  current.setHours(0, 0, 0, 0)
+  let counted = 0
+  while (true) {
+    if (isBusinessDay(current, holidays)) {
+      counted += 1
+      if (counted >= businessDays) return new Date(current)
+    }
+    current.setDate(current.getDate() + 1)
+  }
 }
 
-function FieldLabel({
-  required = false,
-  children,
-}: {
-  required?: boolean
-  children: ReactNode
-}) {
-  return (
-    <div className="text-[14px] font-bold text-[#4b5565]">
-      {required && <span className="mr-1 text-[#ef6b5a]">*</span>}
-      {children}
-    </div>
-  )
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder = '',
-  type = 'text',
-  disabled = false,
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  type?: string
-  disabled?: boolean
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-      className={classNames(
-        'h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
-        disabled && 'bg-[#f8fafc] text-[#667085]'
-      )}
-    />
-  )
-}
-
-function PermanentTooth({
-  selected,
-  onClick,
-  flipped = false,
-}: {
-  selected: boolean
-  onClick: () => void
-  flipped?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
-      )}
-    >
-      <svg
-        viewBox="0 0 36 58"
-        className={classNames('h-[56px] w-[30px]', flipped && 'rotate-180')}
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M9 6 C7 12, 7 19, 9 26 C10 31, 10 37, 10 45 C10 50, 12 51, 14 46 L16.5 34 C17 31, 19 31, 19.5 34 L22 46 C24 51, 26 50, 26 45 C26 37, 26 31, 27 26 C29 19, 29 12, 27 6" />
-        <path d="M9 6 C12 2, 24 2, 27 6" />
-      </svg>
-    </button>
-  )
-}
-
-function PrimaryMolarTooth({
-  selected,
-  onClick,
-}: {
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
-      )}
-    >
-      <svg
-        viewBox="0 0 40 58"
-        className="h-[56px] w-[34px]"
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M7 9 C8 4, 15 3, 20 7 C25 3, 32 4, 33 9 C33 16, 32 24, 29 30 C28 35, 28 41, 28 48 C28 52, 26 53, 24 48 L21.5 36 C21 33, 19 33, 18.5 36 L16 48 C14 53, 12 52, 12 48 C12 41, 12 35, 11 30 C8 24, 7 16, 7 9 Z" />
-      </svg>
-    </button>
-  )
-}
-
-function PrimarySlimTooth({
-  selected,
-  onClick,
-}: {
-  selected: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
-      )}
-    >
-      <svg
-        viewBox="0 0 36 58"
-        className="h-[56px] w-[34px]"
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M10 7 C9 12, 9 18, 10 24 C11 29, 11 35, 11 43 C11 48, 13 50, 15 45 L17 33 C17.5 30, 18.5 30, 19 33 L21 45 C23 50, 25 48, 25 43 C25 35, 25 29, 26 24 C27 18, 27 12, 26 7" />
-        <path d="M10 7 C13 4, 23 4, 26 7" />
-      </svg>
-    </button>
-  )
-}
-
-function PermanentChart({
-  topNumbers,
-  bottomNumbers,
-  selectedTeeth,
-  onToggle,
-}: {
-  topNumbers: number[]
-  bottomNumbers: number[]
-  selectedTeeth: string[]
-  onToggle: (tooth: string) => void
-}) {
-  const leftTop = topNumbers.slice(0, 8)
-  const rightTop = topNumbers.slice(8)
-  const leftBottom = bottomNumbers.slice(0, 8)
-  const rightBottom = bottomNumbers.slice(8)
-
-  const renderGroup = (numbers: number[], bottom = false) => (
-    <div className="grid grid-cols-8 gap-x-3">
-      {numbers.map((n) => {
-        const key = toToothKey(n)
-
-        return (
-          <div key={`${bottom ? 'pb' : 'pt'}-${n}`} className="flex flex-col items-center">
-            {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
-            <PermanentTooth
-              selected={selectedTeeth.includes(key)}
-              onClick={() => onToggle(key)}
-              flipped={!bottom}
-            />
-            {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
-          </div>
-        )
-      })}
-    </div>
-  )
-
-  return (
-    <div className="px-6 py-6">
-      <div className="grid grid-cols-[1fr_24px_1fr] items-start">
-        {renderGroup(leftTop)}
-        <div className="flex h-full items-stretch justify-center">
-          <div className="w-px self-stretch bg-[#d8dde6]" />
-        </div>
-        {renderGroup(rightTop)}
-      </div>
-
-      <div className="my-4 border-t border-[#e5e9f0]" />
-
-      <div className="grid grid-cols-[1fr_24px_1fr] items-start">
-        {renderGroup(leftBottom, true)}
-        <div className="flex h-full items-stretch justify-center">
-          <div className="w-px self-stretch bg-[#d8dde6]" />
-        </div>
-        {renderGroup(rightBottom, true)}
-      </div>
-    </div>
-  )
-}
-
-function PrimaryChart({
-  topNumbers,
-  bottomNumbers,
-  selectedTeeth,
-  onToggle,
-}: {
-  topNumbers: number[]
-  bottomNumbers: number[]
-  selectedTeeth: string[]
-  onToggle: (tooth: string) => void
-}) {
-  const leftTop = topNumbers.slice(0, 5)
-  const rightTop = topNumbers.slice(5)
-  const leftBottom = bottomNumbers.slice(0, 5)
-  const rightBottom = bottomNumbers.slice(5)
-
-  const renderGroup = (numbers: number[], bottom = false) => (
-    <div className="grid grid-cols-5 gap-x-5">
-      {numbers.map((n, i) => {
-        const key = toToothKey(n)
-        const isMolar = i === 0 || i === 1 || i === 3 || i === 4
-
-        return (
-          <div key={`${bottom ? 'cb' : 'ct'}-${n}`} className="flex flex-col items-center">
-            {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
-            {isMolar ? (
-              <PrimaryMolarTooth
-                selected={selectedTeeth.includes(key)}
-                onClick={() => onToggle(key)}
-              />
-            ) : (
-              <PrimarySlimTooth
-                selected={selectedTeeth.includes(key)}
-                onClick={() => onToggle(key)}
-              />
-            )}
-            {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
-          </div>
-        )
-      })}
-    </div>
-  )
-
-  return (
-    <div className="px-6 py-6">
-      <div className="grid grid-cols-[1fr_20px_1fr] items-start">
-        {renderGroup(leftTop)}
-        <div className="flex h-full items-stretch justify-center">
-          <div className="w-px self-stretch bg-[#d8dde6]" />
-        </div>
-        {renderGroup(rightTop)}
-      </div>
-
-      <div className="my-4 border-t border-[#e5e9f0]" />
-
-      <div className="grid grid-cols-[1fr_20px_1fr] items-start">
-        {renderGroup(leftBottom, true)}
-        <div className="flex h-full items-stretch justify-center">
-          <div className="w-px self-stretch bg-[#d8dde6]" />
-        </div>
-        {renderGroup(rightBottom, true)}
-      </div>
-    </div>
-  )
-}
-
-function SelectButton({
-  label,
-  selected,
-  onClick,
-  wide = false,
-}: {
-  label: string
-  selected: boolean
-  onClick: () => void
-  wide?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'rounded-[18px] border px-5 py-4 text-[16px] font-semibold transition',
-        wide ? 'w-full' : 'w-[210px]',
-        selected
-          ? 'border-[#d4a72c] bg-[#efc34a] text-white shadow-[0_10px_24px_rgba(212,167,44,0.18)]'
-          : 'border-[#efc34a] bg-[#fffdf7] text-[#4d5968] hover:bg-[#fff8e8]'
-      )}
-    >
-      {label}
-    </button>
-  )
-}
+// UI 컴포넌트 생략 (기존과 동일)
+function SectionTitle({ title }: { title: string }) { return <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">{title}</div> }
+function FieldLabel({ required = false, children }: { required?: boolean, children: ReactNode }) { return <div className="text-[14px] font-bold text-[#4b5565]">{required && <span className="mr-1 text-[#ef6b5a]">*</span>}{children}</div> }
+function TextInput({ value, onChange, placeholder = '', type = 'text', disabled = false }: { value: string, onChange: (value: string) => void, placeholder?: string, type?: string, disabled?: boolean }) { return <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className={classNames('h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]', disabled && 'bg-[#f8fafc] text-[#667085]')} /> }
+function PermanentTooth({ selected, onClick, flipped = false }: { selected: boolean, onClick: () => void, flipped?: boolean }) { return <button type="button" onClick={onClick} className={classNames('flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition', selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]')}><svg viewBox="0 0 36 58" className={classNames('h-[56px] w-[30px]', flipped && 'rotate-180')} fill={selected ? '#fff4cf' : 'none'} stroke={selected ? '#d4a72c' : '#c9cdd5'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6 C7 12, 7 19, 9 26 C10 31, 10 37, 10 45 C10 50, 12 51, 14 46 L16.5 34 C17 31, 19 31, 19.5 34 L22 46 C24 51, 26 50, 26 45 C26 37, 26 31, 27 26 C29 19, 29 12, 27 6" /><path d="M9 6 C12 2, 24 2, 27 6" /></svg></button> }
+function PrimaryMolarTooth({ selected, onClick }: { selected: boolean, onClick: () => void }) { return <button type="button" onClick={onClick} className={classNames('flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition', selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]')}><svg viewBox="0 0 40 58" className="h-[56px] w-[34px]" fill={selected ? '#fff4cf' : 'none'} stroke={selected ? '#d4a72c' : '#c9cdd5'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M7 9 C8 4, 15 3, 20 7 C25 3, 32 4, 33 9 C33 16, 32 24, 29 30 C28 35, 28 41, 28 48 C28 52, 26 53, 24 48 L21.5 36 C21 33, 19 33, 18.5 36 L16 48 C14 53, 12 52, 12 48 C12 41, 12 35, 11 30 C8 24, 7 16, 7 9 Z" /></svg></button> }
+function PrimarySlimTooth({ selected, onClick }: { selected: boolean, onClick: () => void }) { return <button type="button" onClick={onClick} className={classNames('flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition', selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]')}><svg viewBox="0 0 36 58" className="h-[56px] w-[34px]" fill={selected ? '#fff4cf' : 'none'} stroke={selected ? '#d4a72c' : '#c9cdd5'} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M10 7 C9 12, 9 18, 10 24 C11 29, 11 35, 11 43 C11 48, 13 50, 15 45 L17 33 C17.5 30, 18.5 30, 19 33 L21 45 C23 50, 25 48, 25 43 C25 35, 25 29, 26 24 C27 18, 27 12, 26 7" /><path d="M10 7 C13 4, 23 4, 26 7" /></svg></button> }
+function PermanentChart({ topNumbers, bottomNumbers, selectedTeeth, onToggle }: { topNumbers: number[], bottomNumbers: number[], selectedTeeth: string[], onToggle: (tooth: string) => void }) { const leftTop = topNumbers.slice(0, 8), rightTop = topNumbers.slice(8), leftBottom = bottomNumbers.slice(0, 8), rightBottom = bottomNumbers.slice(8); const renderGroup = (numbers: number[], bottom = false) => (<div className="grid grid-cols-8 gap-x-3">{numbers.map((n) => { const key = toToothKey(n); return (<div key={`${bottom ? 'pb' : 'pt'}-${n}`} className="flex flex-col items-center">{!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}<PermanentTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} flipped={!bottom} />{bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}</div>) })}</div>); return (<div className="px-6 py-6"><div className="grid grid-cols-[1fr_24px_1fr] items-start">{renderGroup(leftTop)}<div className="flex h-full items-stretch justify-center"><div className="w-px self-stretch bg-[#d8dde6]" /></div>{renderGroup(rightTop)}</div><div className="my-4 border-t border-[#e5e9f0]" /><div className="grid grid-cols-[1fr_24px_1fr] items-start">{renderGroup(leftBottom, true)}<div className="flex h-full items-stretch justify-center"><div className="w-px self-stretch bg-[#d8dde6]" /></div>{renderGroup(rightBottom, true)}</div></div>) }
+function PrimaryChart({ topNumbers, bottomNumbers, selectedTeeth, onToggle }: { topNumbers: number[], bottomNumbers: number[], selectedTeeth: string[], onToggle: (tooth: string) => void }) { const leftTop = topNumbers.slice(0, 5), rightTop = topNumbers.slice(5), leftBottom = bottomNumbers.slice(0, 5), rightBottom = bottomNumbers.slice(5); const renderGroup = (numbers: number[], bottom = false) => (<div className="grid grid-cols-5 gap-x-5">{numbers.map((n, i) => { const key = toToothKey(n); const isMolar = i === 0 || i === 1 || i === 3 || i === 4; return (<div key={`${bottom ? 'cb' : 'ct'}-${n}`} className="flex flex-col items-center">{!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}{isMolar ? (<PrimaryMolarTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} />) : (<PrimarySlimTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} />)}{bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}</div>) })}</div>); return (<div className="px-6 py-6"><div className="grid grid-cols-[1fr_20px_1fr] items-start">{renderGroup(leftTop)}<div className="flex h-full items-stretch justify-center"><div className="w-px self-stretch bg-[#d8dde6]" /></div>{renderGroup(rightTop)}</div><div className="my-4 border-t border-[#e5e9f0]" /><div className="grid grid-cols-[1fr_20px_1fr] items-start">{renderGroup(leftBottom, true)}<div className="flex h-full items-stretch justify-center"><div className="w-px self-stretch bg-[#d8dde6]" /></div>{renderGroup(rightBottom, true)}</div></div>) }
+function SelectButton({ label, selected, onClick, wide = false }: { label: string, selected: boolean, onClick: () => void, wide?: boolean }) { return <button type="button" onClick={onClick} className={classNames('rounded-[18px] border px-5 py-4 text-[16px] font-semibold transition', wide ? 'w-full' : 'w-[210px]', selected ? 'border-[#d4a72c] bg-[#efc34a] text-white shadow-[0_10px_24px_rgba(212,167,44,0.18)]' : 'border-[#efc34a] bg-[#fffdf7] text-[#4d5968] hover:bg-[#fff8e8]')}>{label}</button> }
 
 export default function NewOrderPage() {
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { data: session, status } = useSession() 
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  
   const [submitting, setSubmitting] = useState(false)
   const [loadingClinicInfo, setLoadingClinicInfo] = useState(true)
   const [error, setError] = useState('')
@@ -370,66 +83,87 @@ export default function NewOrderPage() {
   const [clinicName, setClinicName] = useState('')
   const [clinicAddress, setClinicAddress] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
+  const [isRemake, setIsRemake] = useState(false)
   const [requestNote, setRequestNote] = useState('')
+
+  const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
+  const [minimumDeliveryDate, setMinimumDeliveryDate] = useState('')
 
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([])
   const [productType, setProductType] = useState<ProductType | ''>('')
   const [thickness, setThickness] = useState('')
   const [jigRequired, setJigRequired] = useState('No')
-
   const [files, setFiles] = useState<File[]>([])
 
+  // 🚀 동의란 관련 상태 추가
+  const [isAgreed, setIsAgreed] = useState(false)
+
+  // 1. 치과 정보 불러오기 복구
   useEffect(() => {
-    let mounted = true
+    if (status === 'unauthenticated') {
+      router.replace('/login')
+      return
+    }
 
-    const loadClinicInfo = async () => {
-      try {
-        setLoadingClinicInfo(true)
-
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser()
-
-        if (userError || !user) {
-          if (mounted) {
-            router.replace('/login')
+    if (status === 'authenticated' && session?.user?.email) {
+      const loadClinicInfo = async () => {
+        try {
+          setLoadingClinicInfo(true)
+          const res = await fetch(`/api/profile?email=${session.user.email}`)
+          const data = await res.json()
+          
+          if (data.profile) {
+            setClinicName(data.profile.clinic_name || '')
+            setClinicAddress(data.profile.clinic_address || '')
           }
-          return
-        }
-
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('clinic_name, clinic_address')
-          .eq('id', user.id)
-          .single()
-
-        if (profileError) {
-          throw new Error('치과 정보를 불러오지 못했습니다.')
-        }
-
-        if (mounted) {
-          setClinicName(profileData?.clinic_name ?? '')
-          setClinicAddress(profileData?.clinic_address ?? '')
-        }
-      } catch (err) {
-        console.error(err)
-        if (mounted) {
-          setError(err instanceof Error ? err.message : '치과 정보를 불러오는 중 오류가 발생했습니다.')
-        }
-      } finally {
-        if (mounted) {
+        } catch (err) {
+          console.error("치과 정보 로드 실패:", err)
+        } finally {
           setLoadingClinicInfo(false)
         }
       }
+      loadClinicInfo()
     }
+  }, [status, session, router])
 
-    loadClinicInfo()
+  // 2. 공휴일 계산기 복구
+  useEffect(() => {
+    const loadHolidays = async () => {
+      try {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
 
-    return () => {
-      mounted = false
+        const currentYear = String(today.getFullYear())
+        const nextYear = String(today.getFullYear() + 1)
+
+        const [currentRes, nextRes] = await Promise.all([
+          fetch(`/api/holidays?year=${currentYear}`, { cache: 'no-store' }),
+          fetch(`/api/holidays?year=${nextYear}`, { cache: 'no-store' }),
+        ])
+
+        const currentJson = await currentRes.json().catch(() => ({}))
+        const nextJson = await nextRes.json().catch(() => ({}))
+
+        const holidayDates = [
+          ...((currentJson.holidays as Array<{ date: string }>) || []),
+          ...((nextJson.holidays as Array<{ date: string }>) || []),
+        ].map((item) => item.date)
+
+        const nextHolidaySet = new Set(holidayDates)
+        const minDate = addBusinessDaysInclusive(today, 4, nextHolidaySet)
+
+        setHolidaySet(nextHolidaySet)
+        setMinimumDeliveryDate(toLocalDateString(minDate))
+      } catch (err) {
+        console.error("휴일 정보 로드 실패:", err)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const fallbackMinDate = addBusinessDaysInclusive(today, 4, new Set())
+        setMinimumDeliveryDate(toLocalDateString(fallbackMinDate))
+      }
     }
-  }, [router])
+    loadHolidays()
+  }, [])
 
   const selectedTeethSummary = useMemo(() => {
     if (selectedTeeth.length === 0) return '선택 전'
@@ -437,224 +171,118 @@ export default function NewOrderPage() {
   }, [selectedTeeth])
 
   const toggleTooth = (tooth: string) => {
-    setSelectedTeeth((prev) =>
-      prev.includes(tooth) ? prev.filter((item) => item !== tooth) : [...prev, tooth]
-    )
+    setSelectedTeeth((prev) => prev.includes(tooth) ? prev.filter((item) => item !== tooth) : [...prev, tooth])
   }
 
+  // 3. 날짜 검증 로직 복구
+  const validateDeliveryDate = (value: string) => {
+    if (!value) return '희망 완료일을 입력해주세요.'
+    const selected = new Date(`${value}T00:00:00`)
+    selected.setHours(0, 0, 0, 0)
+
+    if (Number.isNaN(selected.getTime())) return '희망 완료일 형식이 올바르지 않습니다.'
+    
+    if (minimumDeliveryDate) {
+      const minDate = new Date(`${minimumDeliveryDate}T00:00:00`)
+      minDate.setHours(0, 0, 0, 0)
+      if (selected < minDate) return `희망 완료일은 ${minimumDeliveryDate} 이후부터 선택할 수 있습니다.`
+    }
+    
+    if (isWeekend(selected)) return '주말은 희망 완료일로 선택할 수 없습니다.'
+    if (holidaySet.has(toCompactDateString(selected))) return '공휴일은 희망 완료일로 선택할 수 없습니다.'
+    
+    return ''
+  }
+
+  // 파일 업로드 관련 핸들러들
   const mergeFiles = (incoming: FileList | File[] | null) => {
     if (!incoming) return
-
     const nextFiles = Array.from(incoming)
     setFiles((prev) => {
       const merged = [...prev]
-
       for (const file of nextFiles) {
-        const exists = merged.some(
-          (item) =>
-            item.name === file.name &&
-            item.size === file.size &&
-            item.lastModified === file.lastModified
-        )
-
-        if (!exists) {
-          merged.push(file)
-        }
+        if (merged.length >= MAX_FILE_COUNT) { alert(`파일은 최대 ${MAX_FILE_COUNT}개까지 업로드 가능합니다.`); break }
+        if (file.size > MAX_FILE_SIZE) { alert(`${file.name} 파일은 20MB 이하만 업로드 가능합니다.`); continue }
+        const exists = merged.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)
+        if (!exists) merged.push(file)
       }
-
       return merged
     })
   }
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    mergeFiles(event.target.files)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => { mergeFiles(event.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }
+  const handleDragOver = (event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); event.stopPropagation(); setDragActive(true) }
+  const handleDragLeave = (event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); event.stopPropagation(); setDragActive(false) }
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); event.stopPropagation(); setDragActive(false); mergeFiles(event.dataTransfer?.files || null) }
+  const handleRemoveFile = (index: number) => { setFiles((prev) => prev.filter((_, i) => i !== index)) }
 
-  const handleDragOver = (event: DragEvent<HTMLLabelElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setDragActive(true)
-  }
-
-  const handleDragLeave = (event: DragEvent<HTMLLabelElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setDragActive(false)
-  }
-
-  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setDragActive(false)
-    mergeFiles(event.dataTransfer?.files || null)
-  }
-
-  const handleRemoveFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const uploadFiles = async (orderId: string, nextFiles: File[]) => {
-    if (nextFiles.length === 0) {
-      return {
-        scanFileNames: [] as string[],
-        scanFilePaths: [] as string[],
-      }
-    }
-
-    const scanFileNames: string[] = []
-    const scanFilePaths: string[] = []
-
-    for (const file of nextFiles) {
-      const filePath = `orders/${orderId}/scan/${Date.now()}-${file.name}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('order-files')
-        .upload(filePath, file)
-
-      if (uploadError) {
-        throw new Error('파일 업로드에 실패했습니다.')
-      }
-
-      scanFileNames.push(file.name)
-      scanFilePaths.push(filePath)
-    }
-
-    return { scanFileNames, scanFilePaths }
-  }
-
+  // 제출 로직 (Prisma & NCP 연동)
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
-    if (loadingClinicInfo) {
-      setError('치과 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.')
-      return
-    }
-
-    if (!patientName.trim()) {
-      setError('환자 명을 입력해주세요.')
-      return
-    }
-
-    if (!clinicName.trim()) {
-      setError('치과명을 입력해주세요.')
-      return
-    }
-
-    if (!clinicAddress.trim()) {
-      setError('치과 주소를 입력해주세요.')
-      return
-    }
-
-    if (!deliveryDate) {
-      setError('희망 완료일을 입력해주세요.')
-      return
-    }
-
-    if (selectedTeeth.length === 0) {
-      setError('치아 번호를 하나 이상 선택해주세요.')
-      return
-    }
-
-    if (!productType) {
-      setError('유형을 선택해주세요.')
-      return
-    }
-
-    if (!thickness) {
-      setError('두께를 선택해주세요.')
-      return
-    }
-
-    if (!jigRequired) {
-      setError('지그 제작 여부를 선택해주세요.')
-      return
-    }
+    if (loadingClinicInfo) { setError('치과 정보를 불러오는 중입니다.'); return }
+    if (!patientName.trim()) { setError('환자 명을 입력해주세요.'); return }
+    if (!clinicName.trim()) { setError('치과명을 입력해주세요.'); return }
+    const deliveryDateError = validateDeliveryDate(deliveryDate)
+    if (deliveryDateError) { setError(deliveryDateError); return }
+    if (selectedTeeth.length === 0) { setError('치아 번호를 하나 이상 선택해주세요.'); return }
+    if (!productType) { setError('유형을 선택해주세요.'); return }
+    if (!thickness) { setError('두께를 선택해주세요.'); return }
+    if (!jigRequired) { setError('지그 제작 여부를 선택해주세요.'); return }
+    // 🚀 동의 여부 검증 추가
+    if (!isAgreed) { setError('개인정보 처리 위탁 및 환자 동의 확약에 체크해주세요.'); return }
 
     try {
       setSubmitting(true)
       setError('')
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError || !user) {
-        router.replace('/login')
-        return
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError) {
-        throw new Error('회원 정보를 불러오지 못했습니다.')
-      }
-
-      const { data: insertedOrder, error: insertError } = await supabase
-        .from('orders')
-        .insert({
-          clinic_name: clinicName.trim(),
-          clinic_address: clinicAddress.trim(),
-          patient_name: patientName.trim(),
-          gender: gender || null,
-          birth_date: birthDate || null,
-          product_type: productType,
-          selected_teeth: selectedTeeth,
-          delivery_date: deliveryDate || null,
-          thickness,
-          jig_required: jigRequired,
-          request_note: requestNote.trim() || null,
-          status: '접수 대기' as OrderStatus,
-          user_id: user.id,
-          user_role: profileData?.role || 'clinic',
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: session?.user?.email, 
+          clinicName, patientName, gender, birthDate, productType,
+          selectedTeeth, deliveryDate, thickness, jigRequired, requestNote
         })
-        .select('id')
-        .single()
+      })
 
-      if (insertError || !insertedOrder) {
-        throw new Error('주문 저장에 실패했습니다.')
-      }
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || '주문 저장에 실패했습니다.')
+      const orderId = data.orderId;
 
-      const orderId = insertedOrder.id
+      // NCP 파일 업로드
+      if (files.length > 0) {
+        const scanFileNames: string[] = [];
+        const scanFilePaths: string[] = [];
 
-      const { error: historyInsertError } = await supabase
-        .from('order_status_history')
-        .insert({
-          order_id: orderId,
-          status: '접수 대기',
-          title: '주문 접수',
-          description: `${patientName.trim()} 환자 주문이 접수되었습니다.`,
-          created_by: user.id,
-        })
+        for (const file of files) {
+          const urlRes = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, fileType: file.type, orderId })
+          });
+          const urlData = await urlRes.json();
 
-      if (historyInsertError) {
-        throw new Error('주문 히스토리 저장에 실패했습니다.')
-      }
+          await fetch(urlData.presignedUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type },
+            body: file,
+          });
 
-      const { scanFileNames, scanFilePaths } = await uploadFiles(orderId, files)
-
-      if (scanFileNames.length > 0 || scanFilePaths.length > 0) {
-        const { error: updateFilesError } = await supabase
-          .from('orders')
-          .update({
-            scan_file_names: scanFileNames,
-            scan_file_paths: scanFilePaths,
-          })
-          .eq('id', orderId)
-
-        if (updateFilesError) {
-          throw new Error('업로드 파일 저장에 실패했습니다.')
+          scanFileNames.push(file.name);
+          scanFilePaths.push(urlData.filePath);
         }
+
+        await fetch('/api/orders/update-files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, scanFileNames, scanFilePaths })
+        });
       }
 
-      router.push('/orders')
+      alert('주문과 파일 업로드가 성공적으로 완료되었습니다!')
+      router.push('/orders') 
+
     } catch (err) {
       console.error(err)
       setError(err instanceof Error ? err.message : '주문 접수 중 오류가 발생했습니다.')
@@ -662,6 +290,8 @@ export default function NewOrderPage() {
       setSubmitting(false)
     }
   }
+
+  if (status === 'loading') return <div className="p-10 text-center">로딩 중...</div>
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
@@ -672,129 +302,56 @@ export default function NewOrderPage() {
           <div className="border-b border-[#e8edf5] bg-[#fbfcfe] px-8 py-6">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">
-                  주문하기
-                </div>
-                <div className="mt-2 text-[14px] text-[#98a2b3]">
-                  * 항목은 필수 입력 사항입니다.
-                </div>
+                <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">주문하기</div>
+                <div className="mt-2 text-[14px] text-[#98a2b3]">* 항목은 필수 입력 사항입니다.</div>
               </div>
 
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => router.push('/orders')}
-                  className="rounded-[14px] border border-[#cfd7e3] bg-white px-6 py-3 text-[15px] font-bold text-[#475467] transition hover:bg-[#f8fafc]"
-                >
-                  임시저장
-                </button>
-                <button
-                  type="submit"
-                  form="new-order-form"
-                  disabled={submitting || loadingClinicInfo}
-                  className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:opacity-60"
-                >
+                <button type="button" onClick={() => router.push('/orders')} className="rounded-[14px] border border-[#cfd7e3] bg-white px-6 py-3 text-[15px] font-bold text-[#475467] transition hover:bg-[#f8fafc]">취소</button>
+                {/* 🚀 보내기 버튼에 동의 조건(!isAgreed) 추가 */}
+                <button type="submit" form="new-order-form" disabled={submitting || loadingClinicInfo || !isAgreed} className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:opacity-60">
                   {submitting ? '저장 중...' : loadingClinicInfo ? '정보 불러오는 중...' : '보내기'}
                 </button>
               </div>
             </div>
           </div>
 
-          <form
-            id="new-order-form"
-            onSubmit={handleSubmit}
-            className="grid grid-cols-[340px_1fr_300px] gap-6 p-8"
-          >
+          <form id="new-order-form" onSubmit={handleSubmit} className="grid grid-cols-[340px_1fr_300px] gap-6 p-8">
             <div className="overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <SectionTitle title="기본 정보" />
-
               <div className="space-y-5 p-6">
                 <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                   <FieldLabel required>환자 명</FieldLabel>
                   <TextInput value={patientName} onChange={setPatientName} />
                 </div>
-
                 <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                   <FieldLabel>생년월일</FieldLabel>
-                  <TextInput
-                    value={birthDate}
-                    onChange={setBirthDate}
-                    placeholder="연도-월-일"
-                    type="date"
-                  />
+                  <TextInput value={birthDate} onChange={setBirthDate} placeholder="연도-월-일" type="date" />
                 </div>
-
                 <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                   <FieldLabel>성별</FieldLabel>
                   <div className="flex items-center gap-5 text-[14px] font-medium text-[#4b5565]">
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="radio"
-                        name="gender"
-                        value="남"
-                        checked={gender === '남'}
-                        onChange={(e) => setGender(e.target.value)}
-                        className="h-4 w-4"
-                      />
-                      남
-                    </label>
-
-                    <label className="flex cursor-pointer items-center gap-2">
-                      <input
-                        type="radio"
-                        name="gender"
-                        value="여"
-                        checked={gender === '여'}
-                        onChange={(e) => setGender(e.target.value)}
-                        className="h-4 w-4"
-                      />
-                      여
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => setGender('')}
-                      className="text-[13px] font-semibold text-[#98a2b3]"
-                    >
-                      선택 해제
-                    </button>
+                    <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="gender" value="남" checked={gender === '남'} onChange={(e) => setGender(e.target.value)} className="h-4 w-4" />남</label>
+                    <label className="flex cursor-pointer items-center gap-2"><input type="radio" name="gender" value="여" checked={gender === '여'} onChange={(e) => setGender(e.target.value)} className="h-4 w-4" />여</label>
+                    <button type="button" onClick={() => setGender('')} className="text-[13px] font-semibold text-[#98a2b3]">선택 해제</button>
                   </div>
                 </div>
-
+                
+                {/* 4. 치과명 & 주소 자동입력 폼 복구 */}
                 <div className="border-t border-[#eef2f6] pt-5">
                   <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                     <FieldLabel required>치과명</FieldLabel>
                     <div>
-                      <TextInput
-                        value={clinicName}
-                        onChange={setClinicName}
-                        disabled={loadingClinicInfo}
-                        placeholder={loadingClinicInfo ? '치과명 불러오는 중...' : '치과명을 입력하세요'}
-                      />
-                      <div className="mt-2 text-[12px] text-[#98a2b3]">
-                        회원가입 시 등록된 치과명이 자동 입력되며, 필요하면 수정할 수 있습니다.
-                      </div>
+                      <TextInput value={clinicName} onChange={setClinicName} disabled={loadingClinicInfo} placeholder={loadingClinicInfo ? '치과명 불러오는 중...' : '치과명을 입력하세요'} />
+                      <div className="mt-2 text-[12px] text-[#98a2b3]">회원가입 시 등록된 치과명이 자동 입력되며, 수정할 수 있습니다.</div>
                     </div>
                   </div>
                 </div>
-
                 <div className="border-t border-[#eef2f6] pt-5">
                   <div className="grid grid-cols-[82px_1fr] items-start gap-4">
                     <FieldLabel required>치과주소</FieldLabel>
                     <div>
-                      <textarea
-                        value={clinicAddress}
-                        onChange={(e) => setClinicAddress(e.target.value)}
-                        disabled={loadingClinicInfo}
-                        placeholder={loadingClinicInfo ? '치과주소 불러오는 중...' : '치과 주소를 입력하세요'}
-                        className={classNames(
-                          'min-h-[96px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] outline-none transition focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
-                          loadingClinicInfo && 'bg-[#f8fafc] text-[#667085]'
-                        )}
-                      />
-                      <div className="mt-2 text-[12px] text-[#98a2b3]">
-                        회원가입 시 등록된 주소가 자동 입력되며, 필요하면 수정할 수 있습니다.
-                      </div>
+                      <textarea value={clinicAddress} onChange={(e) => setClinicAddress(e.target.value)} disabled={loadingClinicInfo} placeholder={loadingClinicInfo ? '치과주소 불러오는 중...' : '치과 주소를 입력하세요'} className={classNames('min-h-[96px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] outline-none transition focus:border-[#9db7ff]', loadingClinicInfo && 'bg-[#f8fafc] text-[#667085]')} />
                     </div>
                   </div>
                 </div>
@@ -802,154 +359,80 @@ export default function NewOrderPage() {
                 <div className="border-t border-[#eef2f6] pt-5">
                   <div className="grid grid-cols-[82px_1fr] items-center gap-4">
                     <FieldLabel required>희망 완료일</FieldLabel>
-                    <TextInput
-                      value={deliveryDate}
-                      onChange={setDeliveryDate}
-                      placeholder="연도-월-일"
-                      type="date"
-                    />
+                    <div>
+                      <input type="date" value={deliveryDate} min={minimumDeliveryDate || undefined} onChange={(e) => setDeliveryDate(e.target.value)} className="h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none" />
+                      <div className="mt-2 text-[12px] text-[#98a2b3]">
+                        {minimumDeliveryDate ? `최소 선택 가능일: ${minimumDeliveryDate}` : '최소 선택 가능일을 계산 중입니다.'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 <div className="border-t border-[#eef2f6] pt-5">
+                  <div className="grid grid-cols-[82px_1fr] items-center gap-4">
+                    <FieldLabel>remake여부</FieldLabel>
+                    <label className="flex items-center gap-3 text-[14px] font-medium text-[#4b5565]"><input type="checkbox" checked={isRemake} onChange={(e) => setIsRemake(e.target.checked)} className="h-4 w-4" />remake입니다</label>
+                  </div>
+                </div>
+                <div className="border-t border-[#eef2f6] pt-5">
                   <div className="mb-3 text-[14px] font-bold text-[#4b5565]">메모</div>
-                  <textarea
-                    value={requestNote}
-                    onChange={(e) => setRequestNote(e.target.value)}
-                    className="h-[150px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] outline-none transition focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
-                  />
+                  <textarea value={requestNote} onChange={(e) => setRequestNote(e.target.value)} className="h-[150px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] outline-none" />
                 </div>
               </div>
             </div>
 
             <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
               <SectionTitle title="치아 번호 (영구치) *" />
-              <PermanentChart
-                topNumbers={PERMANENT_TOP}
-                bottomNumbers={PERMANENT_BOTTOM}
-                selectedTeeth={selectedTeeth}
-                onToggle={toggleTooth}
-              />
-
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                치아 번호 (유치) *
-              </div>
-              <PrimaryChart
-                topNumbers={PRIMARY_TOP}
-                bottomNumbers={PRIMARY_BOTTOM}
-                selectedTeeth={selectedTeeth}
-                onToggle={toggleTooth}
-              />
-
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                유형 *
-              </div>
-              <div className="p-6">
-                <div className="flex flex-wrap gap-3">
-                  {PRODUCT_TYPES.map((type) => (
-                    <SelectButton
-                      key={type}
-                      label={type}
-                      selected={productType === type}
-                      onClick={() => setProductType(type)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                두께 선택 *
-              </div>
-              <div className="p-6">
-                <div className="flex flex-wrap gap-3">
-                  {THICKNESS_OPTIONS.map((option) => (
-                    <SelectButton
-                      key={option}
-                      label={option}
-                      selected={thickness === option}
-                      onClick={() => setThickness(option)}
-                    />
-                  ))}
-                </div>
-              </div>
-
+              <PermanentChart topNumbers={PERMANENT_TOP} bottomNumbers={PERMANENT_BOTTOM} selectedTeeth={selectedTeeth} onToggle={toggleTooth} />
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">치아 번호 (유치) *</div>
+              <PrimaryChart topNumbers={PRIMARY_TOP} bottomNumbers={PRIMARY_BOTTOM} selectedTeeth={selectedTeeth} onToggle={toggleTooth} />
+              
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">유형 *</div>
+              <div className="p-6"><div className="flex flex-wrap gap-3">{PRODUCT_TYPES.map((type) => (<SelectButton key={type} label={type} selected={productType === type} onClick={() => setProductType(type)} />))}</div></div>
+              
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">두께 선택 *</div>
+              <div className="p-6"><div className="flex flex-wrap gap-3">{THICKNESS_OPTIONS.map((option) => (<SelectButton key={option} label={option} selected={thickness === option} onClick={() => setThickness(option)} />))}</div></div>
+              
               <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4">
                 <div className="text-[17px] font-extrabold text-[#263142]">지그 제작 여부 *</div>
-                <div className="mt-2 text-[13px] font-bold text-red-500">
-                  (제작시 5000원 추가 비용 발생)
-                </div>
+                <div className="mt-2 text-[13px] font-bold text-red-500">(제작시 5000원 추가 비용 발생)</div>
               </div>
+              <div className="p-6"><div className="grid grid-cols-2 gap-3"><SelectButton label="Yes" selected={jigRequired === 'Yes'} onClick={() => setJigRequired('Yes')} wide /><SelectButton label="No" selected={jigRequired === 'No'} onClick={() => setJigRequired('No')} wide /></div></div>
+              
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">파일 업로드</div>
               <div className="p-6">
-                <div className="grid grid-cols-2 gap-3">
-                  <SelectButton
-                    label="Yes"
-                    selected={jigRequired === 'Yes'}
-                    onClick={() => setJigRequired('Yes')}
-                    wide
-                  />
-                  <SelectButton
-                    label="No"
-                    selected={jigRequired === 'No'}
-                    onClick={() => setJigRequired('No')}
-                    wide
-                  />
-                </div>
-              </div>
-
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                파일 업로드
-              </div>
-              <div className="p-6">
-                <label
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={classNames(
-                    'flex min-h-[164px] cursor-pointer items-center justify-center rounded-[18px] border border-dashed text-center transition',
-                    dragActive
-                      ? 'border-[#d4a72c] bg-[#fff8e8] text-[#8a6510]'
-                      : 'border-[#d5dde8] bg-[#fbfcfe] text-[#8b95a5]'
-                  )}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
+                <label onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} className={classNames('flex min-h-[164px] cursor-pointer items-center justify-center rounded-[18px] border border-dashed text-center transition', dragActive ? 'border-[#d4a72c] bg-[#fff8e8] text-[#8a6510]' : 'border-[#d5dde8] bg-[#fbfcfe] text-[#8b95a5]')}>
+                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
                   <div className="px-6 py-8">
-                    <div className="mb-2 text-[16px] font-semibold text-[#667085]">
-                      업로드할 파일을 끌어 넣어주세요.
-                    </div>
-                    <div className="text-[13px]">첨부파일 최대 크기: 200MB</div>
-
+                    <div className="mb-2 text-[16px] font-semibold text-[#667085]">업로드할 파일을 끌어 넣어주세요.</div>
                     {files.length > 0 && (
                       <div className="mt-5 space-y-2 text-left">
                         {files.map((file, index) => (
-                          <div
-                            key={`${file.name}-${index}`}
-                            className="flex items-center justify-between rounded-[12px] border border-[#e4e8ef] bg-white px-4 py-3"
-                          >
-                            <div className="truncate text-[13px] font-semibold text-[#475467]">
-                              {file.name}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                handleRemoveFile(index)
-                              }}
-                              className="ml-3 rounded-[10px] border border-[#e4e8ef] px-3 py-1.5 text-[12px] font-bold text-[#667085]"
-                            >
-                              삭제
-                            </button>
+                          <div key={`${file.name}-${index}`} className="flex items-center justify-between rounded-[12px] border border-[#e4e8ef] bg-white px-4 py-3">
+                            <div className="truncate text-[13px] font-semibold text-[#475467]">{file.name}</div>
+                            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemoveFile(index) }} className="ml-3 rounded-[10px] border border-[#e4e8ef] px-3 py-1.5 text-[12px] font-bold text-[#667085]">삭제</button>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
+                </label>
+              </div>
+              
+              {/* 🚀 이 부분만 새롭게 추가되었습니다 (동의란 UI) */}
+              <div className="border-t border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">개인정보 처리 위탁 및 환자 동의 확약 <span className="text-red-500">*</span></div>
+              <div className="p-6">
+                <div className="mb-4 h-[120px] overflow-y-auto rounded-[12px] border border-[#d6dde8] bg-[#fbfcfe] p-4 text-[13px] leading-relaxed text-[#4b5565]">
+                  <strong>제1조 (목적)</strong><br />
+                  본 확약은 치과(위탁자)가 스마일캐드(수탁자)에게 맞춤형 의료기기 제작을 의뢰함에 있어, 「개인정보 보호법」 및 관련 법령에 따라 환자의 민감정보(구강 스캔 데이터, 성명 등)를 안전하게 처리하고 보호하는 데 목적이 있습니다.<br /><br />
+                  <strong>제2조 (환자 동의 사전 취득 확약)</strong><br />
+                  치과는 본 주문을 접수하기 전, 해당 환자로부터 본인의 구강 스캔 데이터 및 개인정보가 맞춤형 보철물 제작을 위해 외부 기공소(스마일캐드)에 제공(위탁)된다는 사실을 명확히 고지하였으며, 이에 대한 적법한 사전 동의를 취득하였음을 확약합니다.<br /><br />
+                  <strong>제3조 (책임 소재 및 보존)</strong><br />
+                  만약 치과가 환자의 사전 동의를 얻지 않고 데이터를 전송하여 발생하는 모든 법적 분쟁에 대한 책임은 위탁자인 치과에 있습니다. 수탁자는 제공받은 데이터를 의뢰받은 의료기기 제작 및 품질관리(법정 보존기간 5년) 목적으로만 안전하게 관리하며, 기간 만료 시 지체 없이 파기합니다.
+                </div>
+                <label className="flex cursor-pointer items-center gap-3">
+                  <input type="checkbox" checked={isAgreed} onChange={(e) => setIsAgreed(e.target.checked)} className="h-5 w-5 rounded border-[#d6dde8] text-[#3b82f6]" />
+                  <span className="text-[14px] font-bold text-[#344054]">위 내용을 모두 확인하였으며, 환자의 사전 동의를 적법하게 취득하였음을 확약합니다.</span>
                 </label>
               </div>
 
@@ -958,38 +441,13 @@ export default function NewOrderPage() {
 
             <div className="overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <SectionTitle title="요약" />
-
               <div className="p-5">
                 <div className="rounded-[18px] border border-dashed border-[#d8dfe8] bg-[#fbfcfe] p-5">
-                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">유형</div>
-                    <div className="text-[15px] font-bold text-[#475467]">
-                      {productType || '선택 전'}
-                    </div>
-                  </div>
-
-                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">치아 번호</div>
-                    <div className="break-words text-[15px] font-bold text-[#475467]">
-                      {selectedTeethSummary}
-                    </div>
-                  </div>
-
-                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">두께</div>
-                    <div className="text-[15px] font-bold text-[#475467]">
-                      {thickness || '선택 전'}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">지그 제작 여부</div>
-                    <div className="text-[15px] font-bold text-[#475467]">
-                      {jigRequired || '선택 전'}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 text-center text-[28px] text-[#a5afbd]">↺</div>
+                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center"><div className="mb-2 text-[13px] font-bold text-[#97a0ae]">유형</div><div className="text-[15px] font-bold text-[#475467]">{productType || '선택 전'}</div></div>
+                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center"><div className="mb-2 text-[13px] font-bold text-[#97a0ae]">치아 번호</div><div className="break-words text-[15px] font-bold text-[#475467]">{selectedTeethSummary}</div></div>
+                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center"><div className="mb-2 text-[13px] font-bold text-[#97a0ae]">두께</div><div className="text-[15px] font-bold text-[#475467]">{thickness || '선택 전'}</div></div>
+                  <div className="mb-5 rounded-[14px] bg-[#f5f7fb] p-4 text-center"><div className="mb-2 text-[13px] font-bold text-[#97a0ae]">지그 제작 여부</div><div className="text-[15px] font-bold text-[#475467]">{jigRequired || '선택 전'}</div></div>
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center"><div className="mb-2 text-[13px] font-bold text-[#97a0ae]">remake 여부</div><div className="text-[15px] font-bold text-[#475467]">{isRemake ? 'Yes' : 'No'}</div></div>
                 </div>
               </div>
             </div>

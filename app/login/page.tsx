@@ -3,7 +3,7 @@
 import Script from 'next/script'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { signIn, getSession } from 'next-auth/react' 
 import { firebaseAuth } from '@/lib/firebase'
 import {
   ConfirmationResult,
@@ -12,18 +12,7 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 
-const supabase = createClient()
-
 type AuthMode = 'login' | 'signup'
-
-type ProfileRow = {
-  id: string
-  role: string
-  login_id?: string | null
-  clinic_name: string | null
-  clinic_address?: string | null
-  clinic_phone?: string | null
-}
 
 type DaumPostcodeData = {
   zonecode: string
@@ -79,30 +68,28 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('')
-  const [confirmationResult, setConfirmationResult] =
-    useState<ConfirmationResult | null>(null)
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null)
   const [recaptchaVerified, setRecaptchaVerified] = useState(false)
 
   const [checkingLoginId, setCheckingLoginId] = useState(false)
   const [loginIdChecked, setLoginIdChecked] = useState(false)
   const [loginIdAvailable, setLoginIdAvailable] = useState(false)
 
+  // 🚀 [추가됨] 법적 동의 상태 관리
+  const [isTermsAgreed, setIsTermsAgreed] = useState(false)
+  const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(false)
+  const [isEntrustAgreed, setIsEntrustAgreed] = useState(false)
+
   useEffect(() => {
     const checkSession = async () => {
       setPageLoading(true)
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
+      const session = await getSession()
       if (session?.user) {
         router.replace('/orders')
         return
       }
-
       setPageLoading(false)
     }
-
     checkSession()
   }, [router])
 
@@ -113,7 +100,6 @@ export default function LoginPage() {
 
   const formatPhoneForDisplay = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 11)
-
     if (digits.length <= 3) return digits
     if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
     return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
@@ -121,15 +107,12 @@ export default function LoginPage() {
 
   const toKoreanPhoneE164 = (value: string) => {
     const digits = value.replace(/\D/g, '')
-
     if (digits.startsWith('82')) {
       if (digits.length < 11 || digits.length > 12) return null
       return `+${digits}`
     }
-
     if (!digits.startsWith('0')) return null
     if (digits.length < 10 || digits.length > 11) return null
-
     return `+82${digits.slice(1)}`
   }
 
@@ -137,16 +120,6 @@ export default function LoginPage() {
 
   const isValidLoginId = (value: string) => {
     return /^[a-zA-Z0-9._-]{4,20}$/.test(value)
-  }
-
-  const toAuthEmailFromLoginId = (value: string) => {
-    const normalized = normalizeLoginId(value)
-    if (!normalized) return ''
-    return `${normalized}@smilecad.local`
-  }
-
-  const isValidEmail = (value: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
   }
 
   const signupPhoneE164 = useMemo(() => {
@@ -160,16 +133,6 @@ export default function LoginPage() {
   const canSendOtp = useMemo(() => {
     return isPhoneReadyForOtp && recaptchaVerified && !otpSending
   }, [isPhoneReadyForOtp, recaptchaVerified, otpSending])
-
-  const resolvedSignupAuthEmail = useMemo(() => {
-    const normalized = normalizeLoginId(signupLoginId)
-
-    if (!isValidLoginId(normalized)) {
-      return null
-    }
-
-    return toAuthEmailFromLoginId(normalized)
-  }, [signupLoginId])
 
   const fullSignupClinicAddress = useMemo(() => {
     return [signupClinicAddressBase.trim(), signupClinicAddressDetail.trim()]
@@ -191,9 +154,7 @@ export default function LoginPage() {
     if (!container) return
 
     if (window.recaptchaVerifier) {
-      try {
-        window.recaptchaVerifier.clear()
-      } catch {}
+      try { window.recaptchaVerifier.clear() } catch {}
       window.recaptchaVerifier = undefined
       recaptchaInitializedRef.current = false
     }
@@ -214,15 +175,10 @@ export default function LoginPage() {
           },
         }
       )
-
       await window.recaptchaVerifier.render()
       recaptchaInitializedRef.current = true
     } catch (error) {
-      const msg =
-        error instanceof Error
-          ? error.message
-          : 'reCAPTCHA 초기화 중 오류가 발생했습니다.'
-      setErrorMessage(msg)
+      setErrorMessage(error instanceof Error ? error.message : 'reCAPTCHA 오류가 발생했습니다.')
     }
   }
 
@@ -233,30 +189,21 @@ export default function LoginPage() {
 
   const openAddressSearch = () => {
     resetMessages()
-
     if (!window.daum?.Postcode) {
-      setErrorMessage('주소 검색 서비스를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.')
+      setErrorMessage('주소 검색 서비스를 아직 불러오지 못했습니다.')
       return
     }
 
     new window.daum.Postcode({
       oncomplete: (data: DaumPostcodeData) => {
         let extraAddress = ''
-
         if (data.addressType === 'R') {
-          if (data.bname) {
-            extraAddress += data.bname
-          }
-
+          if (data.bname) extraAddress += data.bname
           if (data.buildingName && data.apartment === 'Y') {
             extraAddress += extraAddress ? `, ${data.buildingName}` : data.buildingName
           }
         }
-
-        const baseAddress = extraAddress
-          ? `${data.address} (${extraAddress})`
-          : data.address
-
+        const baseAddress = extraAddress ? `${data.address} (${extraAddress})` : data.address
         setSignupClinicZipcode(data.zonecode || '')
         setSignupClinicAddressBase(baseAddress)
       },
@@ -264,22 +211,10 @@ export default function LoginPage() {
   }
 
   const resetPhoneVerification = () => {
-    setOtpCode('')
-    setOtpSent(false)
-    setPhoneVerified(false)
-    setVerifiedPhoneE164('')
-    setConfirmationResult(null)
-    setRecaptchaVerified(false)
-
-    if (firebaseAuth.currentUser) {
-      void firebaseSignOut(firebaseAuth)
-    }
-
-    setTimeout(() => {
-      if (mode === 'signup') {
-        void initRecaptcha()
-      }
-    }, 0)
+    setOtpCode(''); setOtpSent(false); setPhoneVerified(false);
+    setVerifiedPhoneE164(''); setConfirmationResult(null); setRecaptchaVerified(false);
+    if (firebaseAuth.currentUser) void firebaseSignOut(firebaseAuth)
+    setTimeout(() => { if (mode === 'signup') void initRecaptcha() }, 0)
   }
 
   const resetLoginIdCheck = () => {
@@ -287,40 +222,8 @@ export default function LoginPage() {
     setLoginIdAvailable(false)
   }
 
-  const ensureProfileAfterLogin = async (userId: string, fallbackLoginId: string) => {
-    const { data: existingProfile, error: profileFetchError } = await supabase
-      .from('profiles')
-      .select('id, role, login_id, clinic_name, clinic_address, clinic_phone')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (profileFetchError) {
-      throw new Error(profileFetchError.message)
-    }
-
-    const profile = existingProfile as ProfileRow | null
-
-    if (!profile) {
-      const fallbackClinicName = fallbackLoginId || '치과'
-
-      const { error: insertProfileError } = await supabase.from('profiles').insert({
-        id: userId,
-        role: 'clinic',
-        login_id: fallbackLoginId,
-        clinic_name: fallbackClinicName,
-        clinic_address: '',
-        clinic_phone: '',
-      })
-
-      if (insertProfileError) {
-        throw new Error(insertProfileError.message)
-      }
-    }
-  }
-
   const checkDuplicateLoginId = async () => {
     resetMessages()
-
     const normalizedLoginId = normalizeLoginId(signupLoginId)
 
     if (!normalizedLoginId) {
@@ -337,21 +240,18 @@ export default function LoginPage() {
 
     try {
       setCheckingLoginId(true)
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('login_id', normalizedLoginId)
-        .maybeSingle()
-
-      if (error) {
-        throw new Error(error.message)
-      }
-
-      if (data) {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check', loginId: normalizedLoginId }),
+      })
+      
+      const data = await res.json()
+      
+      if (!res.ok) {
         setLoginIdChecked(true)
         setLoginIdAvailable(false)
-        setErrorMessage('이미 사용 중인 아이디입니다.')
+        setErrorMessage(data.error)
         return
       }
 
@@ -359,9 +259,7 @@ export default function LoginPage() {
       setLoginIdAvailable(true)
       setMessage('사용 가능한 아이디입니다.')
     } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : '아이디 중복 확인 중 오류가 발생했습니다.'
-      setErrorMessage(msg)
+      setErrorMessage('아이디 중복 확인 중 오류가 발생했습니다.')
       resetLoginIdCheck()
     } finally {
       setCheckingLoginId(false)
@@ -379,38 +277,23 @@ export default function LoginPage() {
       return
     }
 
-    if (!isValidLoginId(normalizedLoginId)) {
-      setErrorMessage('아이디 형식이 올바르지 않습니다.')
-      return
-    }
-
     try {
       setLoading(true)
-
-      const authEmail = toAuthEmailFromLoginId(normalizedLoginId)
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: authEmail,
+      
+      const result = await signIn('credentials', {
+        redirect: false,
+        email: normalizedLoginId,
         password: loginPassword,
       })
 
-      if (error) {
-        throw new Error(error.message)
+      if (result?.error) {
+        throw new Error(result.error)
       }
-
-      const user = data.user
-      if (!user) {
-        throw new Error('로그인 사용자 정보를 확인할 수 없습니다.')
-      }
-
-      await ensureProfileAfterLogin(user.id, normalizedLoginId)
 
       setMessage('로그인되었습니다. 주문 목록으로 이동합니다.')
       router.replace('/orders')
     } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.'
-      setErrorMessage(msg)
+      setErrorMessage(error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
@@ -418,53 +301,17 @@ export default function LoginPage() {
 
   const handleSendOtp = async () => {
     resetMessages()
-
-    if (!signupClinicPhone.trim()) {
-      setErrorMessage('휴대폰 번호를 입력해주세요.')
-      return
-    }
-
-    if (!signupPhoneE164) {
-      setErrorMessage('올바른 휴대폰 번호 형식으로 입력해주세요.')
-      return
-    }
-
-    if (!recaptchaVerified) {
-      setErrorMessage('먼저 "로봇이 아닙니다"를 체크해주세요.')
-      return
-    }
-
-    if (!window.recaptchaVerifier) {
-      setErrorMessage('reCAPTCHA가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
-      return
-    }
+    if (!signupPhoneE164) { setErrorMessage('올바른 형식으로 입력해주세요.'); return }
+    if (!recaptchaVerified) { setErrorMessage('로봇 확인을 해주세요.'); return }
 
     try {
       setOtpSending(true)
-
-      const result = await signInWithPhoneNumber(
-        firebaseAuth,
-        signupPhoneE164,
-        window.recaptchaVerifier
-      )
-
+      const result = await signInWithPhoneNumber(firebaseAuth, signupPhoneE164, window.recaptchaVerifier!)
       setConfirmationResult(result)
-      setOtpSent(true)
-      setPhoneVerified(false)
-      setVerifiedPhoneE164('')
-      setOtpCode('')
-      setMessage('인증번호를 발송했습니다. 문자로 받은 6자리 코드를 입력해주세요.')
-    } catch (error) {
-      const rawMessage =
-        error instanceof Error ? error.message : '인증번호 발송 중 오류가 발생했습니다.'
-
-      if (rawMessage.toLowerCase().includes('too-many-requests')) {
-        setErrorMessage('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.')
-      } else if (rawMessage.toLowerCase().includes('invalid-phone-number')) {
-        setErrorMessage('휴대폰 번호 형식이 올바르지 않습니다.')
-      } else {
-        setErrorMessage(rawMessage)
-      }
+      setOtpSent(true); setPhoneVerified(false); setVerifiedPhoneE164(''); setOtpCode('')
+      setMessage('인증번호를 발송했습니다.')
+    } catch (error: any) {
+      setErrorMessage(error.message)
     } finally {
       setOtpSending(false)
     }
@@ -472,52 +319,18 @@ export default function LoginPage() {
 
   const handleVerifyOtp = async () => {
     resetMessages()
-
-    if (!confirmationResult) {
-      setErrorMessage('먼저 인증번호를 발송해주세요.')
-      return
-    }
-
-    if (!signupPhoneE164) {
-      setErrorMessage('올바른 휴대폰 번호를 입력해주세요.')
-      return
-    }
-
-    if (!otpCode.trim()) {
-      setErrorMessage('인증번호를 입력해주세요.')
-      return
-    }
+    if (!confirmationResult || !otpCode.trim()) { setErrorMessage('인증번호를 확인해주세요.'); return }
 
     try {
       setOtpVerifying(true)
-
       const credential = await confirmationResult.confirm(otpCode.trim())
-      const verifiedPhone = credential.user.phoneNumber
-
-      if (!verifiedPhone) {
-        throw new Error('인증된 휴대폰 번호를 확인할 수 없습니다.')
-      }
-
-      if (verifiedPhone !== signupPhoneE164) {
-        throw new Error('인증된 번호와 입력한 번호가 일치하지 않습니다.')
-      }
-
+      if (credential.user.phoneNumber !== signupPhoneE164) throw new Error('번호 불일치')
       setPhoneVerified(true)
-      setVerifiedPhoneE164(verifiedPhone)
-      setMessage('휴대폰 인증이 완료되었습니다.')
-
+      setVerifiedPhoneE164(credential.user.phoneNumber)
+      setMessage('휴대폰 인증 완료.')
       await firebaseSignOut(firebaseAuth)
     } catch (error) {
-      const rawMessage =
-        error instanceof Error ? error.message : '인증번호 확인 중 오류가 발생했습니다.'
-
-      if (rawMessage.toLowerCase().includes('invalid-verification-code')) {
-        setErrorMessage('인증번호가 올바르지 않습니다.')
-      } else if (rawMessage.toLowerCase().includes('code-expired')) {
-        setErrorMessage('인증번호가 만료되었습니다. 다시 발송해주세요.')
-      } else {
-        setErrorMessage(rawMessage)
-      }
+      setErrorMessage('인증번호가 올바르지 않습니다.')
     } finally {
       setOtpVerifying(false)
     }
@@ -529,180 +342,66 @@ export default function LoginPage() {
 
     const normalizedLoginId = normalizeLoginId(signupLoginId)
 
-    if (!normalizedLoginId) {
-      setErrorMessage('아이디를 입력해주세요.')
+    if (!normalizedLoginId || !loginIdChecked || !loginIdAvailable) {
+      setErrorMessage('아이디 입력 및 중복 확인을 해주세요.')
       return
     }
-
-    if (!isValidLoginId(normalizedLoginId)) {
-      setErrorMessage('아이디는 4~20자의 영문, 숫자, 점(.), 밑줄(_), 하이픈(-)만 사용할 수 있습니다.')
+    if (!signupClinicName.trim() || !fullSignupClinicAddress || !signupPhoneE164) {
+      setErrorMessage('필수 정보를 모두 입력해주세요.')
       return
     }
-
-    if (!loginIdChecked || !loginIdAvailable) {
-      setErrorMessage('아이디 중복 확인을 먼저 완료해주세요.')
-      return
-    }
-
-    if (!signupClinicName.trim()) {
-      setErrorMessage('치과명을 입력해주세요.')
-      return
-    }
-
-    if (!signupClinicAddressBase.trim()) {
-      setErrorMessage('주소 검색을 통해 기본주소를 입력해주세요.')
-      return
-    }
-
-    if (!signupClinicAddressDetail.trim()) {
-      setErrorMessage('상세주소를 입력해주세요.')
-      return
-    }
-
-    if (!fullSignupClinicAddress) {
-      setErrorMessage('치과 주소를 입력해주세요.')
-      return
-    }
-
-    if (!signupClinicPhone.trim()) {
-      setErrorMessage('휴대폰 번호를 입력해주세요.')
-      return
-    }
-
-    if (!signupPhoneE164) {
-      setErrorMessage('올바른 휴대폰 번호 형식으로 입력해주세요.')
-      return
-    }
-
     if (!phoneVerified || verifiedPhoneE164 !== signupPhoneE164) {
-      setErrorMessage('휴대폰 OTP 인증을 완료해야 회원가입할 수 있습니다.')
+      setErrorMessage('휴대폰 인증을 완료해주세요.')
       return
     }
-
-    if (signupClinicEmail.trim() && !isValidEmail(signupClinicEmail.trim())) {
-      setErrorMessage('치과 이메일 형식이 올바르지 않습니다.')
+    if (signupPassword.length < 6 || signupPassword !== signupPasswordConfirm) {
+      setErrorMessage('비밀번호 확인이 일치하지 않거나 6자 미만입니다.')
       return
     }
-
-    if (!resolvedSignupAuthEmail) {
-      setErrorMessage('아이디 처리 중 오류가 발생했습니다.')
-      return
-    }
-
-    if (!signupPassword.trim()) {
-      setErrorMessage('비밀번호를 입력해주세요.')
-      return
-    }
-
-    if (signupPassword.length < 6) {
-      setErrorMessage('비밀번호는 6자 이상으로 입력해주세요.')
-      return
-    }
-
-    if (signupPassword !== signupPasswordConfirm) {
-      setErrorMessage('비밀번호 확인이 일치하지 않습니다.')
+    
+    // 🚀 [추가됨] 약관 동의 체크
+    if (!isTermsAgreed || !isPrivacyAgreed || !isEntrustAgreed) {
+      setErrorMessage('필수 약관 및 개인정보 처리 위탁 계약에 모두 동의해주세요.')
       return
     }
 
     try {
       setLoading(true)
 
-      const { data: duplicateRow, error: duplicateCheckError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('login_id', normalizedLoginId)
-        .maybeSingle()
-
-      if (duplicateCheckError) {
-        throw new Error(duplicateCheckError.message)
-      }
-
-      if (duplicateRow) {
-        setLoginIdChecked(true)
-        setLoginIdAvailable(false)
-        throw new Error('이미 사용 중인 아이디입니다.')
-      }
-
-      const { data, error } = await supabase.auth.signUp({
-        email: resolvedSignupAuthEmail,
-        password: signupPassword,
-        options: {
-          data: {
-            login_id: normalizedLoginId,
-            clinic_name: signupClinicName.trim(),
-            clinic_address: fullSignupClinicAddress,
-            clinic_phone: signupClinicPhone.trim(),
-            clinic_email: signupClinicEmail.trim() || null,
-            phone_verified: true,
-            role: 'clinic',
-          },
-        },
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'signup',
+          loginId: normalizedLoginId,
+          password: signupPassword,
+          clinicName: signupClinicName.trim(),
+          clinicAddress: fullSignupClinicAddress,
+          clinicPhone: signupClinicPhone.trim(),
+        })
       })
 
-      if (error) {
-        throw new Error(error.message)
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error)
       }
 
-      const user = data.user
-      if (!user) {
-        throw new Error('회원가입 사용자 정보를 확인할 수 없습니다.')
-      }
-
-      const { error: profileUpsertError } = await supabase.from('profiles').upsert({
-        id: user.id,
-        role: 'clinic',
-        login_id: normalizedLoginId,
-        clinic_name: signupClinicName.trim(),
-        clinic_address: fullSignupClinicAddress,
-        clinic_phone: signupClinicPhone.trim(),
-      })
-
-      if (profileUpsertError) {
-        if (profileUpsertError.message.toLowerCase().includes('duplicate key')) {
-          throw new Error('이미 사용 중인 아이디입니다.')
-        }
-        throw new Error(profileUpsertError.message)
-      }
-
-      setMessage('회원가입이 완료되었습니다. 아이디와 비밀번호로 로그인해주세요.')
-
-      setSignupLoginId('')
-      setSignupClinicName('')
-      setSignupClinicZipcode('')
-      setSignupClinicAddressBase('')
-      setSignupClinicAddressDetail('')
-      setSignupClinicPhone('')
-      setSignupClinicEmail('')
-      setSignupPassword('')
-      setSignupPasswordConfirm('')
-      resetPhoneVerification()
-      resetLoginIdCheck()
+      setMessage('회원가입이 완료되었습니다. 로그인해주세요.')
       setMode('login')
+      setSignupPassword(''); setSignupPasswordConfirm('');
     } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.'
-      setErrorMessage(msg)
+      setErrorMessage(error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
   }
 
-  if (pageLoading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-100 px-6">
-        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm text-slate-600 shadow-sm">
-          페이지를 불러오는 중입니다...
-        </div>
-      </main>
-    )
-  }
+  if (pageLoading) return <main className="flex min-h-screen items-center justify-center bg-slate-100">불러오는 중...</main>
 
   return (
     <>
-      <Script
-        src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"
-        strategy="afterInteractive"
-      />
+      <Script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" strategy="afterInteractive" />
 
       <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6 lg:px-8">
         <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.12)] lg:grid-cols-[1.05fr_0.95fr]">
@@ -716,474 +415,140 @@ export default function LoginPage() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold tracking-tight">SmileCAD Platform</p>
-                    <p className="text-sm text-slate-200">
-                      교정유지장치 주문 · 진행상태 · 파일관리 플랫폼
-                    </p>
+                    <p className="text-sm text-slate-200">교정유지장치 주문 플랫폼</p>
                   </div>
                 </div>
 
                 <div className="mt-12 max-w-xl">
-                  <p className="text-sm font-semibold uppercase tracking-[0.35em] text-blue-300">
-                    Digital Orthodontic Workflow
-                  </p>
-                  <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">
-                    치과 주문 접수를
-                    <br />
-                    더 빠르고 정확하게
-                  </h1>
-                  <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">
-                    주문 접수부터 진행 상태 확인, 스캔 파일 관리와 디자인 파일 전달까지
-                    한 화면에서 간편하게 관리할 수 있습니다.
-                  </p>
+                  <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">치과 주문 접수를 <br /> 더 빠르고 정확하게</h1>
+                  <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">주문 접수부터 상태 확인까지 한 번에.</p>
                 </div>
-
-                <div className="mt-10 grid gap-3">
-                  {[
-                    '주문 접수와 상세 확인을 빠르게',
-                    '진행 상태를 한눈에 확인',
-                    '스캔 / 디자인 파일을 체계적으로 관리',
-                  ].map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-2xl border border-white/10 bg-white/8 px-5 py-4 backdrop-blur-sm"
-                    >
-                      <p className="text-sm font-semibold text-slate-100">
-                        <span className="mr-2 text-blue-300">✔</span>
-                        {item}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-10 text-sm text-slate-300">
-                정확한 주문 접수, 명확한 상태 관리, 체계적인 파일 운영
               </div>
             </div>
           </section>
 
-          <section className="flex items-center justify-center bg-white px-5 py-8 md:px-8 lg:px-10">
+          <section className="flex items-center justify-center bg-white px-5 py-8 md:px-8 lg:px-10 overflow-y-auto">
             <div className="w-full max-w-xl">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-600">
-                  SmileCAD
-                </p>
-                <h2 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
-                  {mode === 'login' ? '로그인' : '회원가입'}
-                </h2>
-                <p className="mt-3 text-base leading-7 text-slate-500">
-                  {mode === 'login'
-                    ? '아이디와 비밀번호로 로그인하여 주문 플랫폼을 시작하세요.'
-                    : '치과 정보를 등록하고 같은 페이지에서 휴대폰 인증 후 계정을 생성하세요.'}
-                </p>
+                <h2 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">{mode === 'login' ? '로그인' : '회원가입'}</h2>
               </div>
 
               <div className="mt-8 grid grid-cols-2 rounded-2xl bg-slate-100 p-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetMessages()
-                    setMode('login')
-                  }}
-                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                    mode === 'login'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  로그인
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetMessages()
-                    setMode('signup')
-                  }}
-                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                    mode === 'signup'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  회원가입
-                </button>
+                <button type="button" onClick={() => { resetMessages(); setMode('login') }} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>로그인</button>
+                <button type="button" onClick={() => { resetMessages(); setMode('signup') }} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>회원가입</button>
               </div>
 
-              {message ? (
-                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {message}
-                </div>
-              ) : null}
-
-              {errorMessage ? (
-                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {errorMessage}
-                </div>
-              ) : null}
+              {message ? <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
+              {errorMessage ? <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div> : null}
 
               {mode === 'login' ? (
                 <form onSubmit={handleLogin} className="mt-8 space-y-5">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      아이디
-                    </label>
-                    <input
-                      type="text"
-                      value={loginId}
-                      onChange={(e) => setLoginId(e.target.value)}
-                      placeholder="아이디를 입력하세요"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      autoComplete="username"
-                    />
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
+                    <input type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="아이디를 입력하세요" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
                   </div>
-
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      비밀번호
-                    </label>
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="비밀번호를 입력하세요"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      autoComplete="current-password"
-                    />
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
+                    <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="비밀번호를 입력하세요" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
                   </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                  >
-                    {loading ? '로그인 중...' : '로그인'}
-                  </button>
-
-                  <div className="pt-2 text-center text-sm text-slate-500">
-                    계정이 없으신가요?{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetMessages()
-                        setMode('signup')
-                      }}
-                      className="font-semibold text-blue-600 hover:text-blue-700"
-                    >
-                      회원가입
-                    </button>
-                  </div>
+                  <button type="submit" disabled={loading} className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700">{loading ? '로그인 중...' : '로그인'}</button>
                 </form>
               ) : (
                 <form onSubmit={handleSignup} className="mt-8 space-y-5">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      아이디 <span className="text-red-500">*</span>
-                    </label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
                     <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={signupLoginId}
-                        onChange={(e) => {
-                          setSignupLoginId(e.target.value)
-                          resetLoginIdCheck()
-                          resetMessages()
-                        }}
-                        placeholder="4~20자 영문, 숫자, . _ - 사용 가능"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={checkDuplicateLoginId}
-                        disabled={checkingLoginId}
-                        className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        {checkingLoginId ? '확인 중...' : '중복 확인'}
-                      </button>
+                      <input type="text" value={signupLoginId} onChange={(e) => { setSignupLoginId(e.target.value); resetLoginIdCheck(); }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                      <button type="button" onClick={checkDuplicateLoginId} disabled={checkingLoginId} className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm text-white">{checkingLoginId ? '확인 중...' : '중복 확인'}</button>
                     </div>
-
-                    {loginIdChecked && loginIdAvailable ? (
-                      <p className="mt-2 text-sm font-semibold text-emerald-600">
-                        사용 가능한 아이디입니다.
-                      </p>
-                    ) : null}
+                    {loginIdChecked && loginIdAvailable ? <p className="mt-2 text-sm text-emerald-600">사용 가능한 아이디입니다.</p> : null}
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      치과명 <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={signupClinicName}
-                      onChange={(e) => setSignupClinicName(e.target.value)}
-                      placeholder="예: 스마일치과"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      required
-                    />
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">치과명</label>
+                    <input type="text" value={signupClinicName} onChange={(e) => setSignupClinicName(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      치과 주소 <span className="text-red-500">*</span>
-                    </label>
-
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">치과 주소</label>
                     <div className="grid grid-cols-[140px_1fr] gap-3">
-                      <button
-                        type="button"
-                        onClick={openAddressSearch}
-                        className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-                      >
-                        주소 검색
-                      </button>
-
-                      <input
-                        type="text"
-                        value={signupClinicZipcode}
-                        readOnly
-                        placeholder="우편번호"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-4 text-base text-slate-700 outline-none"
-                      />
+                      <button type="button" onClick={openAddressSearch} className="rounded-2xl bg-slate-900 text-white">주소 검색</button>
+                      <input type="text" value={signupClinicZipcode} readOnly className="w-full rounded-2xl bg-slate-100 px-4 py-4" />
                     </div>
-
-                    <div className="mt-3">
-                      <input
-                        type="text"
-                        value={signupClinicAddressBase}
-                        readOnly
-                        placeholder="주소 검색으로 기본주소를 입력해주세요"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-4 text-base text-slate-700 outline-none"
-                      />
-                    </div>
-
-                    <div className="mt-3">
-                      <input
-                        type="text"
-                        value={signupClinicAddressDetail}
-                        onChange={(e) => setSignupClinicAddressDetail(e.target.value)}
-                        placeholder="상세주소를 입력해주세요"
-                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                        required
-                      />
-                    </div>
-
-                    <p className="mt-2 text-sm text-slate-500">
-                      주소 검색 후 상세주소를 추가로 입력해주세요.
-                    </p>
+                    <input type="text" value={signupClinicAddressBase} readOnly className="mt-3 w-full rounded-2xl bg-slate-100 px-4 py-4" />
+                    <input type="text" value={signupClinicAddressDetail} onChange={(e) => setSignupClinicAddressDetail(e.target.value)} placeholder="상세주소를 입력해주세요" className="mt-3 w-full rounded-2xl bg-slate-50 px-4 py-4" required />
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
-                        1
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">휴대폰 본인 확인</p>
-                        <p className="text-sm text-slate-500">
-                          휴대폰 번호 입력 → 로봇 확인 → 인증번호 발송 순서로 진행됩니다.
-                        </p>
-                      </div>
+                    <p className="font-bold mb-2">휴대폰 본인 확인</p>
+                    <div className="flex gap-3 mb-2">
+                      <input type="text" value={signupClinicPhone} onChange={(e) => { setSignupClinicPhone(formatPhoneForDisplay(e.target.value)); resetPhoneVerification(); }} placeholder="예: 010-1234-5678" className="w-full rounded-2xl border px-4 py-4" required />
+                      <button type="button" onClick={handleSendOtp} disabled={!canSendOtp} className="shrink-0 rounded-2xl bg-slate-900 px-5 text-white">{otpButtonLabel}</button>
                     </div>
+                    <div id={recaptchaContainerId} className="mb-2" />
+                    
+                    <div className="flex gap-3">
+                      <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6자리 코드" disabled={!otpSent} className="w-full rounded-2xl border px-4 py-4" />
+                      <button type="button" onClick={handleVerifyOtp} disabled={otpVerifying || phoneVerified || !otpSent} className="shrink-0 rounded-2xl bg-blue-600 px-5 text-white">{phoneVerified ? '인증 완료' : 'OTP 확인'}</button>
+                    </div>
+                  </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold text-slate-700">
-                        휴대폰 번호 <span className="text-red-500">*</span>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
+                    <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호 확인</label>
+                    <input type="password" value={signupPasswordConfirm} onChange={(e) => setSignupPasswordConfirm(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                  </div>
+
+                  {/* 🚀 [추가됨] 이용약관 및 개인정보 처리 위탁 동의 영역 */}
+                  <div className="mt-6 flex flex-col gap-4 rounded-[20px] border border-slate-200 bg-white p-5">
+                    <h3 className="text-sm font-bold text-slate-800">이용약관 및 보안 확약</h3>
+
+                    {/* 1. 개인정보 처리 위탁 계약 */}
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input type="checkbox" checked={isEntrustAgreed} onChange={(e) => setIsEntrustAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                        <span className="text-[13px] font-bold text-blue-900">[필수] 개인정보 처리 위탁 계약 동의</span>
                       </label>
-                      <div className="flex gap-3">
-                        <input
-                          type="text"
-                          value={signupClinicPhone}
-                          onChange={(e) => {
-                            const nextValue = formatPhoneForDisplay(e.target.value)
-                            setSignupClinicPhone(nextValue)
-                            resetPhoneVerification()
-                            resetMessages()
-                          }}
-                          placeholder="예: 010-1234-5678"
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSendOtp}
-                          disabled={!canSendOtp}
-                          className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                        >
-                          {otpButtonLabel}
-                        </button>
+                      <div className="h-[80px] overflow-y-auto rounded-xl border border-blue-100 bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600 shadow-inner">
+                        <strong>제1조 (목적 및 대상)</strong><br />
+                        본 계약은 위탁자(치과)가 맞춤형 의료기기 제작을 위해 수탁자(스마일캐드)에게 환자의 성명, 구강 스캔 데이터(STL 등 민감정보)를 제공함에 있어 필요한 보안 사항을 규정합니다.<br /><br />
+                        <strong>제2조 (데이터 무결성 및 보안)</strong><br />
+                        수탁자는 ISMS-P 및 HIPAA 기준에 준하는 보안 시스템을 구축하고, 모든 데이터 접근 이력(Audit Trail)을 조작 불가능한 형태로 보존하여 데이터 무결성을 입증합니다.<br /><br />
+                        <strong>제3조 (보존 기간)</strong><br />
+                        의료기기법 및 당사 품질관리 규정에 따라, 제품 추적성을 위해 모든 주문 데이터는 <strong>생성일로부터 5년간</strong> 안전하게 보존되며, 기간 만료 시 지체 없이 파기됩니다.<br /><br />
+                        <strong>제4조 (책임 권한)</strong><br />
+                        본 서비스 가입은 당사 품질절차서 및 고객자산 관리 규정에 따른 적법한 개인정보 처리 위탁 계약의 체결로 간주됩니다.
                       </div>
-
-                      {!signupClinicPhone.trim() ? (
-                        <p className="mt-2 text-sm text-slate-500">
-                          먼저 휴대폰 번호를 입력해주세요.
-                        </p>
-                      ) : !signupPhoneE164 ? (
-                        <p className="mt-2 text-sm text-red-500">
-                          올바른 휴대폰 번호 형식으로 입력해주세요.
-                        </p>
-                      ) : null}
                     </div>
 
-                    <div className="mt-5">
-                      <div
-                        className={`rounded-2xl border p-4 transition ${
-                          recaptchaVerified
-                            ? 'border-emerald-200 bg-emerald-50'
-                            : 'border-blue-200 bg-blue-50'
-                        }`}
-                      >
-                        <div className="mb-3 flex items-center gap-3">
-                          <div
-                            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                              recaptchaVerified
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-blue-600 text-white'
-                            }`}
-                          >
-                            2
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              로봇 확인을 완료해야 인증번호를 받을 수 있습니다
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              아래 체크를 완료하면 인증번호 발송 버튼이 활성화됩니다.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div id={recaptchaContainerId} className="overflow-hidden rounded-2xl" />
-                      </div>
-
-                      {recaptchaVerified ? (
-                        <p className="mt-2 text-sm font-semibold text-emerald-600">
-                          로봇 확인 완료 · 이제 인증번호를 받을 수 있습니다.
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-sm text-slate-500">
-                          휴대폰 번호 입력 후 아래 체크를 완료하면 인증번호 발송 버튼이 켜집니다.
-                        </p>
-                      )}
+                    {/* 2. 일반 서비스 이용약관 */}
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input type="checkbox" checked={isTermsAgreed} onChange={(e) => setIsTermsAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                        <span className="text-[13px] font-bold text-slate-700">[필수] 서비스 이용약관 동의</span>
+                      </label>
                     </div>
 
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="mb-3 flex items-center gap-3">
-                        <div
-                          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                            otpSent ? 'bg-blue-600 text-white' : 'bg-slate-300 text-slate-600'
-                          }`}
-                        >
-                          3
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">인증번호 입력</p>
-                          <p className="text-xs text-slate-500">
-                            인증번호를 받은 뒤 6자리 코드를 입력하고 확인해주세요.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3">
-                        <input
-                          type="text"
-                          value={otpCode}
-                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          placeholder="문자로 받은 6자리 코드"
-                          disabled={!otpSent}
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtp}
-                          disabled={otpVerifying || phoneVerified || !otpSent}
-                          className="shrink-0 rounded-2xl bg-blue-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-                        >
-                          {phoneVerified ? '인증 완료' : otpVerifying ? '확인 중...' : 'OTP 확인'}
-                        </button>
-                      </div>
-
-                      {phoneVerified ? (
-                        <div className="mt-3 text-sm font-semibold text-emerald-600">
-                          휴대폰 인증이 완료되었습니다.
-                        </div>
-                      ) : otpSent ? (
-                        <div className="mt-3 text-sm text-slate-500">
-                          인증번호가 발송되었습니다. 문자로 받은 6자리 코드를 입력해주세요.
-                        </div>
-                      ) : (
-                        <div className="mt-3 text-sm text-slate-400">
-                          먼저 휴대폰 번호와 로봇 확인을 완료한 뒤 인증번호를 발송해주세요.
-                        </div>
-                      )}
+                    {/* 3. 개인정보 수집 및 이용 동의 */}
+                    <div className="space-y-2">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input type="checkbox" checked={isPrivacyAgreed} onChange={(e) => setIsPrivacyAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
+                        <span className="text-[13px] font-bold text-slate-700">[필수] 개인정보 수집 및 이용 동의</span>
+                      </label>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      치과 이메일 (선택)
-                    </label>
-                    <input
-                      type="email"
-                      value={signupClinicEmail}
-                      onChange={(e) => setSignupClinicEmail(e.target.value)}
-                      placeholder="예: clinic@example.com"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      autoComplete="email"
-                    />
-                    <p className="mt-2 text-sm text-slate-500">
-                      치과 대표 이메일이 있는 경우에만 입력하세요. 로그인 아이디와는 별개입니다.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      비밀번호
-                    </label>
-                    <input
-                      type="password"
-                      value={signupPassword}
-                      onChange={(e) => setSignupPassword(e.target.value)}
-                      placeholder="6자 이상 입력해주세요"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      autoComplete="new-password"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      비밀번호 확인
-                    </label>
-                    <input
-                      type="password"
-                      value={signupPasswordConfirm}
-                      onChange={(e) => setSignupPasswordConfirm(e.target.value)}
-                      placeholder="비밀번호를 한 번 더 입력해주세요"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-                      autoComplete="new-password"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || !phoneVerified || !loginIdChecked || !loginIdAvailable}
-                    className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                  {/* 회원가입 버튼 */}
+                  <button 
+                    type="submit" 
+                    disabled={loading || !phoneVerified || !loginIdChecked || !loginIdAvailable || !isTermsAgreed || !isPrivacyAgreed || !isEntrustAgreed} 
+                    className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white disabled:opacity-50"
                   >
-                    {loading ? '회원가입 처리 중...' : '회원가입'}
+                    {loading ? '가입 중...' : '회원가입'}
                   </button>
-
-                  <div className="pt-1 text-center text-sm text-slate-500">
-                    이미 계정이 있으신가요?{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetMessages()
-                        setMode('login')
-                      }}
-                      className="font-semibold text-blue-600 hover:text-blue-700"
-                    >
-                      로그인
-                    </button>
-                  </div>
                 </form>
               )}
             </div>

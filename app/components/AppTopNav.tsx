@@ -1,148 +1,49 @@
+// app/components/AppTopNav.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
+import { signOut } from 'next-auth/react'
 
-const supabase = createClient()
-
-type CurrentMenu =
-  | 'orders'
-  | 'orders-new'
-  | 'inquiry'
-  | 'inquiry-history'
-  | 'admin-inquiries'
-  | 'dashboard'
-
-type ProfileRow = {
-  id: string
-  role: string
-  clinic_name: string | null
-}
-
-function classNames(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ')
-}
-
-function LogoBadge() {
-  return (
-    <div className="inline-flex items-center rounded-[18px] border border-[#d7deea] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
-      <span className="text-[14px] font-extrabold tracking-[0.28em] text-[#2455ff]">
-        SMILECAD PLATFORM
-      </span>
-    </div>
-  )
-}
-
-function TopActionButton({
-  label,
-  active = false,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={classNames(
-        'rounded-[18px] border px-6 py-3 text-[14px] font-bold transition whitespace-nowrap',
-        active
-          ? 'border-[#0f1b3d] bg-[#0f1b3d] text-white shadow-[0_10px_25px_rgba(15,27,61,0.18)]'
-          : 'border-[#cfd7e3] bg-white text-[#344054] hover:bg-[#f8fafc]'
-      )}
-    >
-      {label}
-    </button>
-  )
-}
-
-export default function AppTopNav({ current }: { current: CurrentMenu }) {
+export default function AppTopNav({ current }: { current?: string }) {
   const router = useRouter()
-  const [isAdmin, setIsAdmin] = useState(false)
 
-  useEffect(() => {
-    let isMounted = true
-
-    const loadProfile = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) return
-
-      const { data } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (!isMounted) return
-      setIsAdmin(data?.role === 'admin')
-    }
-
-    loadProfile()
-
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.replace('/login')
-  }
+  // 🚀 이동할 페이지 주소들을 정확히 매칭해 줍니다.
+  const navItems = [
+    { name: '대시보드', path: '/dashboard', id: 'dashboard' },
+    { name: '주문 목록', path: '/orders', id: 'orders' },
+    { name: '주문 접수', path: '/orders/new', id: 'new-order' },
+    { name: '문의하기', path: '/inquiry', id: 'inquiry' },
+    { name: '문의내역', path: '/inquiries', id: 'inquiries' }, // <- 여기에 연결 완료!
+  ]
 
   return (
-    <div className="mb-8 flex items-start justify-between gap-4">
-      <LogoBadge />
-
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <TopActionButton
-          label="대시보드"
-          active={current === 'dashboard'}
-          onClick={() => router.push('/dashboard')}
-        />
-
-        <TopActionButton
-          label="주문 목록"
-          active={current === 'orders'}
-          onClick={() => router.push('/orders')}
-        />
-
-        {!isAdmin && (
-          <>
-            <TopActionButton
-              label="주문 접수"
-              active={current === 'orders-new'}
-              onClick={() => router.push('/orders/new')}
-            />
-
-            <TopActionButton
-              label="문의하기"
-              active={current === 'inquiry'}
-              onClick={() => router.push('/inquiry')}
-            />
-
-            <TopActionButton
-              label="문의내역"
-              active={current === 'inquiry-history'}
-              onClick={() => router.push('/inquiry/history')}
-            />
-          </>
-        )}
-
-        {isAdmin && (
-          <TopActionButton
-            label="문의관리"
-            active={current === 'admin-inquiries'}
-            onClick={() => router.push('/admin/inquiries')}
-          />
-        )}
-
-        <TopActionButton label="로그아웃" onClick={handleLogout} />
+    <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+      <div 
+        className="cursor-pointer text-[20px] font-black tracking-widest text-blue-600 uppercase" 
+        onClick={() => router.push('/dashboard')}
+      >
+        Smilecad Platform
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => router.push(item.path)}
+            className={`rounded-full px-5 py-2 text-[14px] font-bold transition-all ${
+              current === item.id || current === item.path.substring(1)
+                ? 'bg-[#1e293b] text-white shadow-md'
+                : 'bg-white text-[#64748b] border border-[#e2e8f0] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+            }`}
+          >
+            {item.name}
+          </button>
+        ))}
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          className="rounded-full bg-white px-5 py-2 text-[14px] font-bold text-[#64748b] border border-[#e2e8f0] hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"
+        >
+          로그아웃
+        </button>
       </div>
     </div>
   )

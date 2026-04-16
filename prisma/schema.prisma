@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. 회원 정보 테이블
+model Profile {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  password       String
+  role           String    @default("user") // 사진에 있는 원본 유지
+  clinic_name    String?
+  clinic_address String?
+  clinic_phone   String?
+
+  // 다른 테이블들과의 연결고리
+  inquiries      Inquiry[]
+  orders         Order[]
+}
+
+// 2. 문의하기 테이블 (회원님 원본 그대로 유지!)
+model Inquiry {
+  id             String    @id @default(uuid())
+  user_id        String
+  user           Profile   @relation(fields: [user_id], references: [id])
+  user_role      String
+  clinic_name    String?
+  clinic_address String?
+  clinic_phone   String?
+  title          String
+  category       String
+  content        String
+  status         String    @default("접수")
+  admin_reply    String?
+  replied_at     DateTime?
+}
+
+// 3. 주문 정보 테이블
+model Order {
+  id              String         @id @default(cuid())
+  order_number    String         @unique
+  clinic_name     String?
+  patient_name    String
+  gender          String?
+  birth_date      String?
+  product_type    String
+  selected_teeth  String
+  delivery_date   String?
+  thickness       String?
+  jig_required    String?
+  request_note    String?
+  scan_file_names String?
+  scan_file_paths String?
+  status          String         @default("접수 대기")
+  
+  // Profile 테이블과 연결
+  user_id         String
+  user            Profile        @relation(fields: [user_id], references: [id])
+  user_role       String?
+
+  // 🚀 OrderHistory 테이블과 연결
+  history         OrderHistory[] 
+
+  created_at      DateTime       @default(now())
+}
+
+// 4. 🚀 주문 상태 변경 기록 테이블 (새로 추가)
+model OrderHistory {
+  id         String   @id @default(cuid())
+  status     String   // "접수 대기", "디자인 작업중" 등 변경된 상태
+  created_at DateTime @default(now()) // 변경된 시간
+  
+  // 어떤 주문의 기록인지 연결
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
