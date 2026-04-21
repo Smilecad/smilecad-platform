@@ -1,47 +1,84 @@
-// app/test/page.tsx
-import { prisma } from '../../lib/prisma';
-import { revalidatePath } from 'next/cache';
+'use client';
+import { useState } from 'react';
 
-export default async function TestPage() {
-  // DB 저장 함수
-  async function createProfile(formData: FormData) {
-    'use server';
-    const email = formData.get('email') as string;
-    const name = formData.get('name') as string;
+export default function TestPage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<string>('대기 중...');
 
-    await prisma.profile.create({
-      data: {
-        email: email,
-        clinic_name: name,
-        password: 'test_password_123' // 테스트용 임시 비번
-      },
-    });
-    revalidatePath('/test');
-  }
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+    }
+  };
 
-  // DB에 저장된 프로필 가져오기
-  const profiles = await prisma.profile.findMany();
+  const handleUpload = async () => {
+    if (!file) {
+      alert('파일을 먼저 선택해주세요!');
+      return;
+    }
+
+    try {
+      setStatus('1단계: 백엔드(NCP)에 일회용 열쇠 요청 중... 🔑');
+      
+      const apiUrl = process.env.NEXT_PUBLIC_NCP_API_URL;
+      if (!apiUrl) throw new Error('NEXT_PUBLIC_NCP_API_URL 값이 없습니다.');
+
+      // 깔끔해진 요청 코드 (이상한 주문 모두 삭제)
+      const keyResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: file.type || 'application/octet-stream',
+        }),
+      });
+
+      // 웹 액션이 이제 정상적인 JSON을 뱉어냅니다!
+      const keyData = await keyResponse.json();
+
+      if (!keyData.success || !keyData.presignedUrl) {
+        throw new Error('열쇠 발급 실패: ' + JSON.stringify(keyData));
+      }
+
+      setStatus('2단계: 발급받은 열쇠로 창고에 파일 직배송 중... 🚀');
+
+      const uploadResponse = await fetch(keyData.presignedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (uploadResponse.ok) {
+        setStatus('✅ 업로드 완벽 성공! NCP 창고를 확인해 보세요!');
+        alert('Vercel 패스 직배송 성공!');
+      } else {
+        throw new Error(`업로드 실패: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+
+    } catch (error: any) {
+      console.error(error);
+      setStatus('❌ 에러 발생: ' + error.message);
+    }
+  };
 
   return (
-    <div style={{ padding: '40px', fontFamily: 'sans-serif' }}>
-      <h2>로컬 DB 연결 테스트 (Profile 테이블) 🚀</h2>
-      <form action={createProfile} style={{ marginBottom: '20px' }}>
-        <input name="name" placeholder="치과 이름 입력" style={{ marginRight: '10px', padding: '5px' }} />
-        <input name="email" placeholder="이메일(아이디) 입력" style={{ marginRight: '10px', padding: '5px' }} />
-        <button type="submit">DB에 저장하기</button>
-      </form>
-
-      <hr />
-      <h3>현재 DB에 저장된 명단:</h3>
-      {profiles.length === 0 ? (
-        <p>아직 아무도 없습니다.</p>
-      ) : (
-        <ul>
-          {profiles.map((p) => (
-            <li key={p.id}>{p.clinic_name} ({p.email})</li>
-          ))}
-        </ul>
-      )}
+    <div className="p-10 font-sans">
+      <h1 className="text-2xl font-bold mb-4">무인 NAS 파일 직송 테스트 🚀</h1>
+      <div className="mb-4 bg-gray-100 p-4 rounded inline-block border">
+        <input type="file" onChange={handleFileChange} className="block w-full" />
+      </div>
+      <br />
+      <button 
+        onClick={handleUpload}
+        className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition shadow-lg"
+      >
+        NCP 창고로 직배송 쏘기
+      </button>
+      <div className="mt-8 p-4 bg-yellow-50 rounded font-semibold text-gray-800 border-2 border-yellow-200">
+        현재 상태: {status}
+      </div>
     </div>
   );
 }
