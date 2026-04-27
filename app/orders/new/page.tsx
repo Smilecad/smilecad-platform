@@ -628,8 +628,13 @@ export default function NewOrderPage() {
       const createOrderApiUrl =
         process.env.NEXT_PUBLIC_NCP_CREATE_ORDER_API_URL ||
         'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-order'
-      const getUploadUrlApiUrl = getRequiredEnv('NEXT_PUBLIC_NCP_GET_UPLOAD_URL_API_URL')
-      const updateFilesApiUrl = getRequiredEnv('NEXT_PUBLIC_NCP_UPDATE_ORDER_FILES_API_URL')
+      const getUploadUrlApiUrl =
+        process.env.NEXT_PUBLIC_NCP_GET_UPLOAD_URL_API_URL ||
+        'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-upload-url'
+
+      const updateFilesApiUrl =
+        process.env.NEXT_PUBLIC_NCP_UPDATE_ORDER_FILES_API_URL ||
+        'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/update-order-files'
 
       // 1. 주문 기본 정보 저장
       const createOrderRes = await fetch(createOrderApiUrl, {
