@@ -663,11 +663,11 @@ export default function NewOrderPage() {
 
       const createOrderData = await createOrderRes.json()
 
-      if (!createOrderRes.ok || !createOrderData.success) {
+      if (!createOrderRes.ok) {
         throw new Error(createOrderData.error || '주문 저장에 실패했습니다.')
       }
 
-      const orderId = createOrderData.orderId
+      const orderId =
        createOrderData.orderId ||
        createOrderData.id ||
        clientOrderId
