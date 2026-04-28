@@ -636,6 +636,8 @@ export default function NewOrderPage() {
         process.env.NEXT_PUBLIC_NCP_UPDATE_ORDER_FILES_API_URL ||
         'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/update-order-files'
 
+      const clientOrderId = crypto.randomUUID()
+
       // 1. 주문 기본 정보 저장
       const createOrderRes = await fetch(createOrderApiUrl, {
         method: 'POST',
@@ -655,6 +657,7 @@ export default function NewOrderPage() {
           requestNote: requestNote?.trim() || null,
           isRemake,
           isAgreed,
+          orderId: clientOrderId,
         }),
       })
 
@@ -665,6 +668,13 @@ export default function NewOrderPage() {
       }
 
       const orderId = createOrderData.orderId
+       createOrderData.orderId ||
+       createOrderData.id ||
+       clientOrderId
+
+      if (!orderId) {
+        throw new Error('주문 저장에 실패했습니다.')
+      }
 
       // 2. 파일 업로드
       if (files.length > 0) {
