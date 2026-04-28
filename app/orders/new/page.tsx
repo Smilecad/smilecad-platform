@@ -734,7 +734,7 @@ export default function NewOrderPage() {
 
         const updateFilesData = await updateFilesRes.json()
 
-        if (!updateFilesRes.ok || !updateFilesData.success) {
+        if (!updateFilesRes.ok) {
           throw new Error(updateFilesData.error || '파일 경로 저장에 실패했습니다.')
         }
       }
