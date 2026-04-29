@@ -4,14 +4,6 @@ import Script from 'next/script'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signIn, getSession } from 'next-auth/react'
-import { firebaseAuth } from '@/lib/firebase'
-import {
-  ConfirmationResult,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  signOut as firebaseSignOut,
-} from 'firebase/auth'
-
 type AuthMode = 'login' | 'signup'
 
 type DaumPostcodeData = {
@@ -27,7 +19,6 @@ type DaumPostcodeData = {
 
 declare global {
   interface Window {
-    recaptchaVerifier?: RecaptchaVerifier
     daum?: {
       Postcode: new (options: {
         oncomplete: (data: DaumPostcodeData) => void
@@ -40,13 +31,18 @@ declare global {
 
 export default function LoginPage() {
   const router = useRouter()
-  const recaptchaContainerId = 'firebase-recaptcha-container'
-  const recaptchaInitializedRef = useRef(false)
+
+  const sendOtpApiUrl =
+    process.env.NEXT_PUBLIC_NCP_SEND_OTP_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/send-otp'
+
+  const verifyOtpApiUrl =
+    process.env.NEXT_PUBLIC_NCP_VERIFY_OTP_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/verify-otp'
 
   const createProfileApiUrl =
     process.env.NEXT_PUBLIC_NCP_CREATE_PROFILE_API_URL ||
     'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-profile'
-
   const [mode, setMode] = useState<AuthMode>('login')
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
@@ -72,8 +68,6 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false)
   const [phoneVerified, setPhoneVerified] = useState(false)
   const [verifiedPhoneE164, setVerifiedPhoneE164] = useState('')
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null)
-  const [recaptchaVerified, setRecaptchaVerified] = useState(false)
 
   const [checkingLoginId, setCheckingLoginId] = useState(false)
   const [loginIdChecked, setLoginIdChecked] = useState(false)
@@ -135,8 +129,8 @@ export default function LoginPage() {
   }, [signupPhoneE164])
 
   const canSendOtp = useMemo(() => {
-    return isPhoneReadyForOtp && recaptchaVerified && !otpSending
-  }, [isPhoneReadyForOtp, recaptchaVerified, otpSending])
+    return isPhoneReadyForOtp && !otpSending
+  }, [isPhoneReadyForOtp, otpSending])
 
   const fullSignupClinicAddress = useMemo(() => {
     return [signupClinicAddressBase.trim(), signupClinicAddressDetail.trim()]
@@ -149,47 +143,8 @@ export default function LoginPage() {
     if (otpSending) return '발송 중...'
     if (!signupClinicPhone.trim()) return '번호를 먼저 입력하세요'
     if (!signupPhoneE164) return '번호 형식을 확인하세요'
-    if (!recaptchaVerified) return '로봇 확인 후 발송 가능'
     return '인증번호 발송'
-  }, [otpSending, signupClinicPhone, signupPhoneE164, recaptchaVerified])
-
-  const initRecaptcha = async () => {
-    const container = document.getElementById(recaptchaContainerId)
-    if (!container) return
-
-    if (window.recaptchaVerifier) {
-      try { window.recaptchaVerifier.clear() } catch {}
-      window.recaptchaVerifier = undefined
-      recaptchaInitializedRef.current = false
-    }
-
-    try {
-      window.recaptchaVerifier = new RecaptchaVerifier(
-        firebaseAuth,
-        recaptchaContainerId,
-        {
-          size: 'normal',
-          callback: () => {
-            setRecaptchaVerified(true)
-            setMessage('로봇 확인이 완료되었습니다. 이제 인증번호를 받을 수 있습니다.')
-          },
-          'expired-callback': () => {
-            setRecaptchaVerified(false)
-            setErrorMessage('로봇 확인이 만료되었습니다. 다시 체크해주세요.')
-          },
-        }
-      )
-      await window.recaptchaVerifier.render()
-      recaptchaInitializedRef.current = true
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'reCAPTCHA 오류가 발생했습니다.')
-    }
-  }
-
-  useEffect(() => {
-    if (mode !== 'signup') return
-    void initRecaptcha()
-  }, [mode])
+  }, [otpSending, signupClinicPhone, signupPhoneE164])
 
   const openAddressSearch = () => {
     resetMessages()
@@ -215,10 +170,10 @@ export default function LoginPage() {
   }
 
   const resetPhoneVerification = () => {
-    setOtpCode(''); setOtpSent(false); setPhoneVerified(false);
-    setVerifiedPhoneE164(''); setConfirmationResult(null); setRecaptchaVerified(false);
-    if (firebaseAuth.currentUser) void firebaseSignOut(firebaseAuth)
-    setTimeout(() => { if (mode === 'signup') void initRecaptcha() }, 0)
+    setOtpCode('')
+    setOtpSent(false)
+    setPhoneVerified(false)
+    setVerifiedPhoneE164('')
   }
 
   const resetLoginIdCheck = () => {
@@ -305,17 +260,34 @@ export default function LoginPage() {
 
   const handleSendOtp = async () => {
     resetMessages()
-    if (!signupPhoneE164) { setErrorMessage('올바른 형식으로 입력해주세요.'); return }
-    if (!recaptchaVerified) { setErrorMessage('로봇 확인을 해주세요.'); return }
+
+    if (!signupPhoneE164) {
+      setErrorMessage('올바른 휴대폰 번호를 입력해주세요.')
+      return
+    }
 
     try {
       setOtpSending(true)
-      const result = await signInWithPhoneNumber(firebaseAuth, signupPhoneE164, window.recaptchaVerifier!)
-      setConfirmationResult(result)
-      setOtpSent(true); setPhoneVerified(false); setVerifiedPhoneE164(''); setOtpCode('')
+
+      const res = await fetch(sendOtpApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: signupPhoneE164 }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || '인증번호 발송에 실패했습니다.')
+      }
+
+      setOtpSent(true)
+      setPhoneVerified(false)
+      setVerifiedPhoneE164('')
+      setOtpCode('')
       setMessage('인증번호를 발송했습니다.')
-    } catch (error: any) {
-      setErrorMessage(error.message)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '인증번호 발송 중 오류가 발생했습니다.')
     } finally {
       setOtpSending(false)
     }
@@ -323,23 +295,35 @@ export default function LoginPage() {
 
   const handleVerifyOtp = async () => {
     resetMessages()
-    if (!confirmationResult || !otpCode.trim()) { setErrorMessage('인증번호를 확인해주세요.'); return }
+
+    if (!signupPhoneE164 || !otpCode.trim()) {
+      setErrorMessage('휴대폰 번호와 인증번호를 확인해주세요.')
+      return
+    }
 
     try {
       setOtpVerifying(true)
-      const credential = await confirmationResult.confirm(otpCode.trim())
-      const verifiedPhone = credential.user.phoneNumber
 
-      if (!verifiedPhone || verifiedPhone !== signupPhoneE164) {
-        throw new Error('번호 불일치')
+      const res = await fetch(verifyOtpApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: signupPhoneE164,
+          code: otpCode.trim(),
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || '인증번호가 올바르지 않습니다.')
       }
 
       setPhoneVerified(true)
-      setVerifiedPhoneE164(verifiedPhone)
-      setMessage('휴대폰 인증 완료.')
-      await firebaseSignOut(firebaseAuth)
+      setVerifiedPhoneE164(signupPhoneE164)
+      setMessage('휴대폰 인증이 완료되었습니다.')
     } catch (error) {
-      setErrorMessage('인증번호가 올바르지 않습니다.')
+      setErrorMessage(error instanceof Error ? error.message : '인증번호가 올바르지 않습니다.')
     } finally {
       setOtpVerifying(false)
     }
@@ -434,8 +418,6 @@ export default function LoginPage() {
       setOtpSent(false)
       setPhoneVerified(false)
       setVerifiedPhoneE164('')
-      setConfirmationResult(null)
-      setRecaptchaVerified(false)
       setLoginIdChecked(false)
       setLoginIdAvailable(false)
       setIsTermsAgreed(false)
@@ -531,13 +513,11 @@ export default function LoginPage() {
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                    <p className="font-bold mb-2">휴대폰 본인 확인</p>
+                    <p className="font-bold mb-2">휴대폰 인증</p>
                     <div className="flex gap-3 mb-2">
                       <input type="text" value={signupClinicPhone} onChange={(e) => { setSignupClinicPhone(formatPhoneForDisplay(e.target.value)); resetPhoneVerification(); }} placeholder="예: 010-1234-5678" className="w-full rounded-2xl border px-4 py-4" required />
                       <button type="button" onClick={handleSendOtp} disabled={!canSendOtp} className="shrink-0 rounded-2xl bg-slate-900 px-5 text-white">{otpButtonLabel}</button>
                     </div>
-                    <div id={recaptchaContainerId} className="mb-2" />
-                    
                     <div className="flex gap-3">
                       <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6자리 코드" disabled={!otpSent} className="w-full rounded-2xl border px-4 py-4" />
                       <button type="button" onClick={handleVerifyOtp} disabled={otpVerifying || phoneVerified || !otpSent} className="shrink-0 rounded-2xl bg-blue-600 px-5 text-white">{phoneVerified ? '인증 완료' : 'OTP 확인'}</button>
