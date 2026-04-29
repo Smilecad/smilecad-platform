@@ -3,7 +3,7 @@
 import Script from 'next/script'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signIn, getSession } from 'next-auth/react' 
+import { signIn, getSession } from 'next-auth/react'
 import { firebaseAuth } from '@/lib/firebase'
 import {
   ConfirmationResult,
@@ -42,6 +42,10 @@ export default function LoginPage() {
   const router = useRouter()
   const recaptchaContainerId = 'firebase-recaptcha-container'
   const recaptchaInitializedRef = useRef(false)
+
+  const createProfileApiUrl =
+    process.env.NEXT_PUBLIC_NCP_CREATE_PROFILE_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-profile'
 
   const [mode, setMode] = useState<AuthMode>('login')
   const [loading, setLoading] = useState(false)
@@ -324,9 +328,14 @@ export default function LoginPage() {
     try {
       setOtpVerifying(true)
       const credential = await confirmationResult.confirm(otpCode.trim())
-      if (credential.user.phoneNumber !== signupPhoneE164) throw new Error('번호 불일치')
+      const verifiedPhone = credential.user.phoneNumber
+
+      if (!verifiedPhone || verifiedPhone !== signupPhoneE164) {
+        throw new Error('번호 불일치')
+      }
+
       setPhoneVerified(true)
-      setVerifiedPhoneE164(credential.user.phoneNumber)
+      setVerifiedPhoneE164(verifiedPhone)
       setMessage('휴대폰 인증 완료.')
       await firebaseSignOut(firebaseAuth)
     } catch (error) {
@@ -341,25 +350,30 @@ export default function LoginPage() {
     resetMessages()
 
     const normalizedLoginId = normalizeLoginId(signupLoginId)
+    const clinicName = signupClinicName.trim()
+    const clinicAddress = fullSignupClinicAddress
+    const clinicPhone = signupClinicPhone.trim()
 
     if (!normalizedLoginId || !loginIdChecked || !loginIdAvailable) {
       setErrorMessage('아이디 입력 및 중복 확인을 해주세요.')
       return
     }
-    if (!signupClinicName.trim() || !fullSignupClinicAddress || !signupPhoneE164) {
+
+    if (!clinicName || !clinicAddress || !signupPhoneE164) {
       setErrorMessage('필수 정보를 모두 입력해주세요.')
       return
     }
+
     if (!phoneVerified || verifiedPhoneE164 !== signupPhoneE164) {
       setErrorMessage('휴대폰 인증을 완료해주세요.')
       return
     }
+
     if (signupPassword.length < 6 || signupPassword !== signupPasswordConfirm) {
       setErrorMessage('비밀번호 확인이 일치하지 않거나 6자 미만입니다.')
       return
     }
-    
-    // 🚀 [추가됨] 약관 동의 체크
+
     if (!isTermsAgreed || !isPrivacyAgreed || !isEntrustAgreed) {
       setErrorMessage('필수 약관 및 개인정보 처리 위탁 계약에 모두 동의해주세요.')
       return
@@ -368,28 +382,65 @@ export default function LoginPage() {
     try {
       setLoading(true)
 
-      const res = await fetch('/api/auth/signup', {
+      const signupRes = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'signup',
           loginId: normalizedLoginId,
           password: signupPassword,
-          clinicName: signupClinicName.trim(),
-          clinicAddress: fullSignupClinicAddress,
-          clinicPhone: signupClinicPhone.trim(),
-        })
+          clinicName,
+          clinicAddress,
+          clinicPhone,
+        }),
       })
 
-      const data = await res.json()
+      const signupData = await signupRes.json()
 
-      if (!res.ok) {
-        throw new Error(data.error)
+      if (!signupRes.ok) {
+        throw new Error(signupData?.error || '회원가입에 실패했습니다.')
+      }
+
+      const profileRes = await fetch(createProfileApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: normalizedLoginId,
+          clinicName,
+          clinicAddress,
+          role: 'clinic',
+        }),
+      })
+
+      const profileData = await profileRes.json()
+
+      if (!profileRes.ok || !profileData?.success) {
+        throw new Error(profileData?.error || '회원 프로필 저장에 실패했습니다.')
       }
 
       setMessage('회원가입이 완료되었습니다. 로그인해주세요.')
       setMode('login')
-      setSignupPassword(''); setSignupPasswordConfirm('');
+
+      setSignupLoginId('')
+      setSignupClinicName('')
+      setSignupClinicZipcode('')
+      setSignupClinicAddressBase('')
+      setSignupClinicAddressDetail('')
+      setSignupClinicPhone('')
+      setSignupClinicEmail('')
+      setSignupPassword('')
+      setSignupPasswordConfirm('')
+      setOtpCode('')
+      setOtpSent(false)
+      setPhoneVerified(false)
+      setVerifiedPhoneE164('')
+      setConfirmationResult(null)
+      setRecaptchaVerified(false)
+      setLoginIdChecked(false)
+      setLoginIdAvailable(false)
+      setIsTermsAgreed(false)
+      setIsPrivacyAgreed(false)
+      setIsEntrustAgreed(false)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '회원가입 중 오류가 발생했습니다.')
     } finally {
