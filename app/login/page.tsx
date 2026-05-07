@@ -1,9 +1,9 @@
 'use client'
 
 import Script from 'next/script'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { signIn, getSession } from 'next-auth/react'
+
 type AuthMode = 'login' | 'signup'
 
 type DaumPostcodeData = {
@@ -32,6 +32,14 @@ declare global {
 export default function LoginPage() {
   const router = useRouter()
 
+  const loginUserApiUrl =
+    process.env.NEXT_PUBLIC_NCP_LOGIN_USER_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/login-user'
+
+  const signupUserApiUrl =
+    process.env.NEXT_PUBLIC_NCP_SIGNUP_USER_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/signup-user'
+
   const sendOtpApiUrl =
     process.env.NEXT_PUBLIC_NCP_SEND_OTP_API_URL ||
     'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/send-otp'
@@ -43,6 +51,7 @@ export default function LoginPage() {
   const createProfileApiUrl =
     process.env.NEXT_PUBLIC_NCP_CREATE_PROFILE_API_URL ||
     'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-profile'
+
   const [mode, setMode] = useState<AuthMode>('login')
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
@@ -73,22 +82,18 @@ export default function LoginPage() {
   const [loginIdChecked, setLoginIdChecked] = useState(false)
   const [loginIdAvailable, setLoginIdAvailable] = useState(false)
 
-  // 🚀 [추가됨] 법적 동의 상태 관리
   const [isTermsAgreed, setIsTermsAgreed] = useState(false)
   const [isPrivacyAgreed, setIsPrivacyAgreed] = useState(false)
   const [isEntrustAgreed, setIsEntrustAgreed] = useState(false)
 
   useEffect(() => {
-    const checkSession = async () => {
-      setPageLoading(true)
-      const session = await getSession()
-      if (session?.user) {
-        router.replace('/orders')
-        return
-      }
-      setPageLoading(false)
+    const token = window.localStorage.getItem('smilecad_token')
+    if (token) {
+      router.replace('/orders')
+      return
     }
-    checkSession()
+
+    setPageLoading(false)
   }, [router])
 
   const resetMessages = () => {
@@ -105,13 +110,16 @@ export default function LoginPage() {
 
   const toKoreanPhoneE164 = (value: string) => {
     const digits = value.replace(/\D/g, '')
+
     if (digits.startsWith('82')) {
       if (digits.length < 11 || digits.length > 12) return null
-      return `+${digits}`
+      return digits
     }
+
     if (!digits.startsWith('0')) return null
     if (digits.length < 10 || digits.length > 11) return null
-    return `+82${digits.slice(1)}`
+
+    return digits
   }
 
   const normalizeLoginId = (value: string) => value.trim().toLowerCase()
@@ -148,6 +156,7 @@ export default function LoginPage() {
 
   const openAddressSearch = () => {
     resetMessages()
+
     if (!window.daum?.Postcode) {
       setErrorMessage('주소 검색 서비스를 아직 불러오지 못했습니다.')
       return
@@ -156,13 +165,16 @@ export default function LoginPage() {
     new window.daum.Postcode({
       oncomplete: (data: DaumPostcodeData) => {
         let extraAddress = ''
+
         if (data.addressType === 'R') {
           if (data.bname) extraAddress += data.bname
           if (data.buildingName && data.apartment === 'Y') {
             extraAddress += extraAddress ? `, ${data.buildingName}` : data.buildingName
           }
         }
+
         const baseAddress = extraAddress ? `${data.address} (${extraAddress})` : data.address
+
         setSignupClinicZipcode(data.zonecode || '')
         setSignupClinicAddressBase(baseAddress)
       },
@@ -183,6 +195,7 @@ export default function LoginPage() {
 
   const checkDuplicateLoginId = async () => {
     resetMessages()
+
     const normalizedLoginId = normalizeLoginId(signupLoginId)
 
     if (!normalizedLoginId) {
@@ -199,18 +212,22 @@ export default function LoginPage() {
 
     try {
       setCheckingLoginId(true)
-      const res = await fetch('/api/auth/signup', {
+
+      const res = await fetch(signupUserApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check', loginId: normalizedLoginId }),
+        body: JSON.stringify({
+          action: 'check',
+          loginId: normalizedLoginId,
+        }),
       })
-      
+
       const data = await res.json()
-      
-      if (!res.ok) {
+
+      if (!res.ok || !data?.success) {
         setLoginIdChecked(true)
         setLoginIdAvailable(false)
-        setErrorMessage(data.error)
+        setErrorMessage(data?.error || '이미 사용 중인 아이디입니다.')
         return
       }
 
@@ -238,16 +255,24 @@ export default function LoginPage() {
 
     try {
       setLoading(true)
-      
-      const result = await signIn('credentials', {
-        redirect: false,
-        email: normalizedLoginId,
-        password: loginPassword,
+
+      const res = await fetch(loginUserApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          loginId: normalizedLoginId,
+          password: loginPassword,
+        }),
       })
 
-      if (result?.error) {
-        throw new Error(result.error)
+      const data = await res.json()
+
+      if (!res.ok || !data?.success || !data?.token) {
+        throw new Error(data?.error || '로그인에 실패했습니다.')
       }
+
+      window.localStorage.setItem('smilecad_token', data.token)
+      window.localStorage.setItem('smilecad_user', JSON.stringify(data.user || {}))
 
       setMessage('로그인되었습니다. 주문 목록으로 이동합니다.')
       router.replace('/orders')
@@ -366,22 +391,21 @@ export default function LoginPage() {
     try {
       setLoading(true)
 
-      const signupRes = await fetch('/api/auth/signup', {
+      const signupRes = await fetch(signupUserApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'signup',
           loginId: normalizedLoginId,
           password: signupPassword,
-          clinicName,
-          clinicAddress,
           clinicPhone,
+          role: 'clinic',
         }),
       })
 
       const signupData = await signupRes.json()
 
-      if (!signupRes.ok) {
+      if (!signupRes.ok || !signupData?.success) {
         throw new Error(signupData?.error || '회원가입에 실패했습니다.')
       }
 
@@ -430,7 +454,13 @@ export default function LoginPage() {
     }
   }
 
-  if (pageLoading) return <main className="flex min-h-screen items-center justify-center bg-slate-100">불러오는 중...</main>
+  if (pageLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-100">
+        불러오는 중...
+      </main>
+    )
+  }
 
   return (
     <>
@@ -453,129 +483,313 @@ export default function LoginPage() {
                 </div>
 
                 <div className="mt-12 max-w-xl">
-                  <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">치과 주문 접수를 <br /> 더 빠르고 정확하게</h1>
-                  <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">주문 접수부터 상태 확인까지 한 번에.</p>
+                  <h1 className="mt-4 text-4xl font-bold leading-tight md:text-5xl">
+                    치과 주문 접수를
+                    <br />
+                    더 빠르고 정확하게
+                  </h1>
+                  <p className="mt-6 text-base leading-7 text-slate-200 md:text-lg">
+                    주문 접수부터 상태 확인까지 한 번에.
+                  </p>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="flex items-center justify-center bg-white px-5 py-8 md:px-8 lg:px-10 overflow-y-auto">
+          <section className="flex items-center justify-center overflow-y-auto bg-white px-5 py-8 md:px-8 lg:px-10">
             <div className="w-full max-w-xl">
               <div>
-                <h2 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">{mode === 'login' ? '로그인' : '회원가입'}</h2>
+                <h2 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
+                  {mode === 'login' ? '로그인' : '회원가입'}
+                </h2>
               </div>
 
               <div className="mt-8 grid grid-cols-2 rounded-2xl bg-slate-100 p-1.5">
-                <button type="button" onClick={() => { resetMessages(); setMode('login') }} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>로그인</button>
-                <button type="button" onClick={() => { resetMessages(); setMode('signup') }} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>회원가입</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetMessages()
+                    setMode('login')
+                  }}
+                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                    mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  로그인
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetMessages()
+                    setMode('signup')
+                  }}
+                  className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                    mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  회원가입
+                </button>
               </div>
 
-              {message ? <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-              {errorMessage ? <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div> : null}
+              {message ? (
+                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {message}
+                </div>
+              ) : null}
+
+              {errorMessage ? (
+                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {errorMessage}
+                </div>
+              ) : null}
 
               {mode === 'login' ? (
                 <form onSubmit={handleLogin} className="mt-8 space-y-5">
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
-                    <input type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="아이디를 입력하세요" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="text"
+                      value={loginId}
+                      onChange={(e) => setLoginId(e.target.value)}
+                      placeholder="아이디를 입력하세요"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
-                    <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="비밀번호를 입력하세요" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="비밀번호를 입력하세요"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
-                  <button type="submit" disabled={loading} className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700">{loading ? '로그인 중...' : '로그인'}</button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {loading ? '로그인 중...' : '로그인'}
+                  </button>
                 </form>
               ) : (
                 <form onSubmit={handleSignup} className="mt-8 space-y-5">
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
                     <div className="flex gap-3">
-                      <input type="text" value={signupLoginId} onChange={(e) => { setSignupLoginId(e.target.value); resetLoginIdCheck(); }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
-                      <button type="button" onClick={checkDuplicateLoginId} disabled={checkingLoginId} className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm text-white">{checkingLoginId ? '확인 중...' : '중복 확인'}</button>
+                      <input
+                        type="text"
+                        value={signupLoginId}
+                        onChange={(e) => {
+                          setSignupLoginId(e.target.value)
+                          resetLoginIdCheck()
+                        }}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={checkDuplicateLoginId}
+                        disabled={checkingLoginId}
+                        className="shrink-0 rounded-2xl bg-slate-900 px-5 py-4 text-sm text-white disabled:opacity-50"
+                      >
+                        {checkingLoginId ? '확인 중...' : '중복 확인'}
+                      </button>
                     </div>
-                    {loginIdChecked && loginIdAvailable ? <p className="mt-2 text-sm text-emerald-600">사용 가능한 아이디입니다.</p> : null}
+                    {loginIdChecked && loginIdAvailable ? (
+                      <p className="mt-2 text-sm text-emerald-600">사용 가능한 아이디입니다.</p>
+                    ) : null}
                   </div>
 
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">치과명</label>
-                    <input type="text" value={signupClinicName} onChange={(e) => setSignupClinicName(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="text"
+                      value={signupClinicName}
+                      onChange={(e) => setSignupClinicName(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
 
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">치과 주소</label>
                     <div className="grid grid-cols-[140px_1fr] gap-3">
-                      <button type="button" onClick={openAddressSearch} className="rounded-2xl bg-slate-900 text-white">주소 검색</button>
-                      <input type="text" value={signupClinicZipcode} readOnly className="w-full rounded-2xl bg-slate-100 px-4 py-4" />
+                      <button
+                        type="button"
+                        onClick={openAddressSearch}
+                        className="rounded-2xl bg-slate-900 text-white"
+                      >
+                        주소 검색
+                      </button>
+                      <input
+                        type="text"
+                        value={signupClinicZipcode}
+                        readOnly
+                        className="w-full rounded-2xl bg-slate-100 px-4 py-4"
+                      />
                     </div>
-                    <input type="text" value={signupClinicAddressBase} readOnly className="mt-3 w-full rounded-2xl bg-slate-100 px-4 py-4" />
-                    <input type="text" value={signupClinicAddressDetail} onChange={(e) => setSignupClinicAddressDetail(e.target.value)} placeholder="상세주소를 입력해주세요" className="mt-3 w-full rounded-2xl bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="text"
+                      value={signupClinicAddressBase}
+                      readOnly
+                      className="mt-3 w-full rounded-2xl bg-slate-100 px-4 py-4"
+                    />
+                    <input
+                      type="text"
+                      value={signupClinicAddressDetail}
+                      onChange={(e) => setSignupClinicAddressDetail(e.target.value)}
+                      placeholder="상세주소를 입력해주세요"
+                      className="mt-3 w-full rounded-2xl bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                    <p className="font-bold mb-2">휴대폰 인증</p>
-                    <div className="flex gap-3 mb-2">
-                      <input type="text" value={signupClinicPhone} onChange={(e) => { setSignupClinicPhone(formatPhoneForDisplay(e.target.value)); resetPhoneVerification(); }} placeholder="예: 010-1234-5678" className="w-full rounded-2xl border px-4 py-4" required />
-                      <button type="button" onClick={handleSendOtp} disabled={!canSendOtp} className="shrink-0 rounded-2xl bg-slate-900 px-5 text-white">{otpButtonLabel}</button>
+                    <p className="mb-2 font-bold">휴대폰 인증</p>
+                    <div className="mb-2 flex gap-3">
+                      <input
+                        type="text"
+                        value={signupClinicPhone}
+                        onChange={(e) => {
+                          setSignupClinicPhone(formatPhoneForDisplay(e.target.value))
+                          resetPhoneVerification()
+                        }}
+                        placeholder="예: 010-1234-5678"
+                        className="w-full rounded-2xl border px-4 py-4"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={!canSendOtp}
+                        className="shrink-0 rounded-2xl bg-slate-900 px-5 text-white disabled:opacity-50"
+                      >
+                        {otpButtonLabel}
+                      </button>
                     </div>
+
                     <div className="flex gap-3">
-                      <input type="text" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6자리 코드" disabled={!otpSent} className="w-full rounded-2xl border px-4 py-4" />
-                      <button type="button" onClick={handleVerifyOtp} disabled={otpVerifying || phoneVerified || !otpSent} className="shrink-0 rounded-2xl bg-blue-600 px-5 text-white">{phoneVerified ? '인증 완료' : 'OTP 확인'}</button>
+                      <input
+                        type="text"
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="6자리 코드"
+                        disabled={!otpSent}
+                        className="w-full rounded-2xl border px-4 py-4 disabled:bg-slate-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyOtp}
+                        disabled={otpVerifying || phoneVerified || !otpSent}
+                        className="shrink-0 rounded-2xl bg-blue-600 px-5 text-white disabled:opacity-50"
+                      >
+                        {phoneVerified ? '인증 완료' : 'OTP 확인'}
+                      </button>
                     </div>
                   </div>
 
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
-                    <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="password"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호 확인</label>
-                    <input type="password" value={signupPasswordConfirm} onChange={(e) => setSignupPasswordConfirm(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" required />
+                    <input
+                      type="password"
+                      value={signupPasswordConfirm}
+                      onChange={(e) => setSignupPasswordConfirm(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                      required
+                    />
                   </div>
 
-                  {/* 🚀 [추가됨] 이용약관 및 개인정보 처리 위탁 동의 영역 */}
                   <div className="mt-6 flex flex-col gap-4 rounded-[20px] border border-slate-200 bg-white p-5">
                     <h3 className="text-sm font-bold text-slate-800">이용약관 및 보안 확약</h3>
 
-                    {/* 1. 개인정보 처리 위탁 계약 */}
                     <div className="space-y-2">
                       <label className="flex cursor-pointer items-center gap-2">
-                        <input type="checkbox" checked={isEntrustAgreed} onChange={(e) => setIsEntrustAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
-                        <span className="text-[13px] font-bold text-blue-900">[필수] 개인정보 처리 위탁 계약 동의</span>
+                        <input
+                          type="checkbox"
+                          checked={isEntrustAgreed}
+                          onChange={(e) => setIsEntrustAgreed(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        />
+                        <span className="text-[13px] font-bold text-blue-900">
+                          [필수] 개인정보 처리 위탁 계약 동의
+                        </span>
                       </label>
                       <div className="h-[80px] overflow-y-auto rounded-xl border border-blue-100 bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600 shadow-inner">
-                        <strong>제1조 (목적 및 대상)</strong><br />
-                        본 계약은 위탁자(치과)가 맞춤형 의료기기 제작을 위해 수탁자(스마일캐드)에게 환자의 성명, 구강 스캔 데이터(STL 등 민감정보)를 제공함에 있어 필요한 보안 사항을 규정합니다.<br /><br />
-                        <strong>제2조 (데이터 무결성 및 보안)</strong><br />
-                        수탁자는 ISMS-P 및 HIPAA 기준에 준하는 보안 시스템을 구축하고, 모든 데이터 접근 이력(Audit Trail)을 조작 불가능한 형태로 보존하여 데이터 무결성을 입증합니다.<br /><br />
-                        <strong>제3조 (보존 기간)</strong><br />
-                        의료기기법 및 당사 품질관리 규정에 따라, 제품 추적성을 위해 모든 주문 데이터는 <strong>생성일로부터 5년간</strong> 안전하게 보존되며, 기간 만료 시 지체 없이 파기됩니다.<br /><br />
-                        <strong>제4조 (책임 권한)</strong><br />
-                        본 서비스 가입은 당사 품질절차서 및 고객자산 관리 규정에 따른 적법한 개인정보 처리 위탁 계약의 체결로 간주됩니다.
+                        <strong>제1조 (목적 및 대상)</strong>
+                        <br />
+                        본 계약은 위탁자(치과)가 맞춤형 의료기기 제작을 위해 수탁자(스마일캐드)에게 환자의 성명, 구강 스캔 데이터(STL 등 민감정보)를 제공함에 있어 필요한 보안 사항을 규정합니다.
+                        <br />
+                        <br />
+                        <strong>제2조 (데이터 무결성 및 보안)</strong>
+                        <br />
+                        수탁자는 서비스 제공에 필요한 범위에서만 데이터를 처리하며, 접근통제와 전송보호 등 안전조치를 적용합니다.
+                        <br />
+                        <br />
+                        <strong>제3조 (보존 기간)</strong>
+                        <br />
+                        주문 데이터는 계약 이행, 품질관리, 분쟁 대응 및 관련 법령상 필요한 기간 동안 보관하며, 보관 필요성이 종료되면 삭제 또는 파기합니다.
+                        <br />
+                        <br />
+                        <strong>제4조 (책임 권한)</strong>
+                        <br />
+                        치과는 환자에게 필요한 고지 및 동의 절차를 완료한 후 주문을 등록해야 합니다.
                       </div>
                     </div>
 
-                    {/* 2. 일반 서비스 이용약관 */}
                     <div className="space-y-2">
                       <label className="flex cursor-pointer items-center gap-2">
-                        <input type="checkbox" checked={isTermsAgreed} onChange={(e) => setIsTermsAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
-                        <span className="text-[13px] font-bold text-slate-700">[필수] 서비스 이용약관 동의</span>
+                        <input
+                          type="checkbox"
+                          checked={isTermsAgreed}
+                          onChange={(e) => setIsTermsAgreed(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        />
+                        <span className="text-[13px] font-bold text-slate-700">
+                          [필수] 서비스 이용약관 동의
+                        </span>
                       </label>
                     </div>
 
-                    {/* 3. 개인정보 수집 및 이용 동의 */}
                     <div className="space-y-2">
                       <label className="flex cursor-pointer items-center gap-2">
-                        <input type="checkbox" checked={isPrivacyAgreed} onChange={(e) => setIsPrivacyAgreed(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600" />
-                        <span className="text-[13px] font-bold text-slate-700">[필수] 개인정보 수집 및 이용 동의</span>
+                        <input
+                          type="checkbox"
+                          checked={isPrivacyAgreed}
+                          onChange={(e) => setIsPrivacyAgreed(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        />
+                        <span className="text-[13px] font-bold text-slate-700">
+                          [필수] 개인정보 수집 및 이용 동의
+                        </span>
                       </label>
                     </div>
                   </div>
 
-                  {/* 회원가입 버튼 */}
-                  <button 
-                    type="submit" 
-                    disabled={loading || !phoneVerified || !loginIdChecked || !loginIdAvailable || !isTermsAgreed || !isPrivacyAgreed || !isEntrustAgreed} 
+                  <button
+                    type="submit"
+                    disabled={
+                      loading ||
+                      !phoneVerified ||
+                      !loginIdChecked ||
+                      !loginIdAvailable ||
+                      !isTermsAgreed ||
+                      !isPrivacyAgreed ||
+                      !isEntrustAgreed
+                    }
                     className="w-full rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white disabled:opacity-50"
                   >
                     {loading ? '가입 중...' : '회원가입'}
