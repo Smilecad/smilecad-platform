@@ -2,30 +2,23 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
 
-const supabase = createClient()
-
-export default function RootPage() {
+export default function HomePage() {
   const router = useRouter()
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data } = await supabase.auth.getUser()
+    const token = window.localStorage.getItem('smilecad_token')
 
-      if (data.user) {
-        router.replace('/dashboard')
-      } else {
-        router.replace('/login')
-      }
+    if (token) {
+      router.replace('/orders')
+    } else {
+      router.replace('/login')
     }
-
-    checkUser()
   }, [router])
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100">
-      <div className="text-lg font-medium text-slate-600">이동 중...</div>
-    </div>
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-600">
+      이동 중...
+    </main>
   )
 }
