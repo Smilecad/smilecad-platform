@@ -654,6 +654,7 @@ export default function NewOrderPage() {
       const createOrderApiUrl =
         process.env.NEXT_PUBLIC_NCP_CREATE_ORDER_API_URL ||
         'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-order'
+
       const getUploadUrlApiUrl =
         process.env.NEXT_PUBLIC_NCP_GET_UPLOAD_URL_API_URL ||
         'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-upload-url'
@@ -690,16 +691,16 @@ export default function NewOrderPage() {
         }),
       })
 
-      const createOrderData = await createOrderRes.json()
+      const createOrderData = await createOrderRes.json().catch(() => ({}))
 
-      if (!createOrderRes.ok) {
-        throw new Error(createOrderData.error || '주문 저장에 실패했습니다.')
+      if (!createOrderRes.ok || !createOrderData?.success) {
+        throw new Error(createOrderData?.error || '주문 저장에 실패했습니다.')
       }
 
       const orderId =
-       createOrderData.orderId ||
-       createOrderData.id ||
-       clientOrderId
+        createOrderData.orderId ||
+        createOrderData.id ||
+        clientOrderId
 
       if (!orderId) {
         throw new Error('주문 저장에 실패했습니다.')
@@ -713,7 +714,7 @@ export default function NewOrderPage() {
         for (const file of files) {
           const uniqueFileName = `order_${orderId}_${Date.now()}_${file.name}`
 
-          // 2-1. presigned URL 발급
+          // 2-1. Presigned URL 발급
           const keyResponse = await fetch(getUploadUrlApiUrl, {
             method: 'POST',
             headers: {
@@ -722,35 +723,52 @@ export default function NewOrderPage() {
             },
             body: JSON.stringify({
               fileName: uniqueFileName,
+              filename: uniqueFileName,
+              name: uniqueFileName,
+              contentType: file.type || 'application/octet-stream',
               fileType: file.type || 'application/octet-stream',
             }),
           })
 
-          const keyData = await keyResponse.json()
+          const keyData = await keyResponse.json().catch(() => ({}))
+
           const uploadInfo =
             typeof keyData.body === 'string'
               ? JSON.parse(keyData.body)
               : keyData.body || keyData
 
-          if (!keyResponse.ok || !uploadInfo.success || !uploadInfo.presignedUrl) {
+          const uploadUrl =
+            uploadInfo.uploadUrl ||
+            uploadInfo.presignedUrl ||
+            uploadInfo.signedUrl ||
+            uploadInfo.url
+
+          const filePath =
+            uploadInfo.filePath ||
+            uploadInfo.objectKey ||
+            uploadInfo.key ||
+            uploadInfo.path ||
+            uniqueFileName
+
+          if (!keyResponse.ok || !uploadInfo.success || !uploadUrl || !filePath) {
+            console.error('get-upload-url 응답 오류:', uploadInfo)
             throw new Error(`파일 업로드 준비 실패: ${file.name}`)
           }
 
           // 2-2. NCP Object Storage로 직접 업로드
-          const uploadResponse = await fetch(uploadInfo.presignedUrl, {
+          const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
-            headers: {
-              'Content-Type': file.type || 'application/octet-stream',
-            },
             body: file,
           })
 
           if (!uploadResponse.ok) {
+            const uploadErrorText = await uploadResponse.text().catch(() => '')
+            console.error('Object Storage 업로드 실패:', uploadResponse.status, uploadErrorText)
             throw new Error(`파일 전송 실패: ${file.name}`)
           }
 
           scanFileNames.push(file.name)
-          scanFilePaths.push(uniqueFileName)
+          scanFilePaths.push(filePath)
         }
 
         // 3. 업로드된 파일 경로를 주문과 연결
@@ -767,10 +785,10 @@ export default function NewOrderPage() {
           }),
         })
 
-        const updateFilesData = await updateFilesRes.json()
+        const updateFilesData = await updateFilesRes.json().catch(() => ({}))
 
-        if (!updateFilesRes.ok) {
-          throw new Error(updateFilesData.error || '파일 경로 저장에 실패했습니다.')
+        if (!updateFilesRes.ok || updateFilesData?.success === false) {
+          throw new Error(updateFilesData?.error || '파일 경로 저장에 실패했습니다.')
         }
       }
 
