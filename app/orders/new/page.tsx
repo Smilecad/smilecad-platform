@@ -11,7 +11,6 @@ type ProductType =
   | 'NT-lingual arch'
   | 'NT-uprighter'
 
-
 type StoredUser = {
   id?: number
   loginId?: string
@@ -91,6 +90,18 @@ function getRequiredEnv(name: string) {
   const value = process.env[name]
   if (!value) throw new Error(`${name} 환경변수가 없습니다.`)
   return value
+}
+
+function parseNcpResponse(raw: any) {
+  if (typeof raw?.body === 'string') {
+    try {
+      return JSON.parse(raw.body)
+    } catch {
+      return raw
+    }
+  }
+
+  return raw?.body || raw
 }
 
 function SectionTitle({ title }: { title: string }) {
@@ -391,7 +402,6 @@ export default function NewOrderPage() {
   const [files, setFiles] = useState<File[]>([])
 
   const [isAgreed, setIsAgreed] = useState(false)
-  
 
   useEffect(() => {
     const token = window.localStorage.getItem('smilecad_token')
@@ -429,7 +439,8 @@ export default function NewOrderPage() {
           },
         })
 
-        const data = await res.json()
+        const raw = await res.json().catch(() => ({}))
+        const data = parseNcpResponse(raw)
 
         if (!res.ok) {
           throw new Error(data?.error || '치과 정보를 불러오지 못했습니다.')
@@ -469,8 +480,11 @@ export default function NewOrderPage() {
           fetch(nextUrl.toString(), { cache: 'no-store' }),
         ])
 
-        const currentJson = await currentRes.json().catch(() => ({}))
-        const nextJson = await nextRes.json().catch(() => ({}))
+        const currentRaw = await currentRes.json().catch(() => ({}))
+        const nextRaw = await nextRes.json().catch(() => ({}))
+
+        const currentJson = parseNcpResponse(currentRaw)
+        const nextJson = parseNcpResponse(nextRaw)
 
         const holidayDates = [
           ...((currentJson.holidays as Array<{ date: string }>) || []),
@@ -665,7 +679,6 @@ export default function NewOrderPage() {
 
       const clientOrderId = crypto.randomUUID()
 
-      // 1. 주문 기본 정보 저장
       const createOrderRes = await fetch(createOrderApiUrl, {
         method: 'POST',
         headers: {
@@ -691,22 +704,24 @@ export default function NewOrderPage() {
         }),
       })
 
-      const createOrderData = await createOrderRes.json().catch(() => ({}))
+      const createOrderRaw = await createOrderRes.json().catch(() => ({}))
+      const createOrderData = parseNcpResponse(createOrderRaw)
 
       if (!createOrderRes.ok || !createOrderData?.success) {
+        console.error('create-order 응답 오류:', createOrderRaw, createOrderData)
         throw new Error(createOrderData?.error || '주문 저장에 실패했습니다.')
       }
 
       const orderId =
         createOrderData.orderId ||
         createOrderData.id ||
+        createOrderData.order_id ||
         clientOrderId
 
       if (!orderId) {
         throw new Error('주문 저장에 실패했습니다.')
       }
 
-      // 2. 파일 업로드
       if (files.length > 0) {
         const scanFileNames: string[] = []
         const scanFilePaths: string[] = []
@@ -714,7 +729,6 @@ export default function NewOrderPage() {
         for (const file of files) {
           const uniqueFileName = `order_${orderId}_${Date.now()}_${file.name}`
 
-          // 2-1. Presigned URL 발급
           const keyResponse = await fetch(getUploadUrlApiUrl, {
             method: 'POST',
             headers: {
@@ -730,12 +744,8 @@ export default function NewOrderPage() {
             }),
           })
 
-          const keyData = await keyResponse.json().catch(() => ({}))
-
-          const uploadInfo =
-            typeof keyData.body === 'string'
-              ? JSON.parse(keyData.body)
-              : keyData.body || keyData
+          const keyRaw = await keyResponse.json().catch(() => ({}))
+          const uploadInfo = parseNcpResponse(keyRaw)
 
           const uploadUrl =
             uploadInfo.uploadUrl ||
@@ -750,12 +760,11 @@ export default function NewOrderPage() {
             uploadInfo.path ||
             uniqueFileName
 
-          if (!keyResponse.ok || !uploadInfo.success || !uploadUrl || !filePath) {
-            console.error('get-upload-url 응답 오류:', uploadInfo)
+          if (!keyResponse.ok || !uploadInfo?.success || !uploadUrl || !filePath) {
+            console.error('get-upload-url 응답 오류:', keyRaw, uploadInfo)
             throw new Error(`파일 업로드 준비 실패: ${file.name}`)
           }
 
-          // 2-2. NCP Object Storage로 직접 업로드
           const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
             body: file,
@@ -771,7 +780,6 @@ export default function NewOrderPage() {
           scanFilePaths.push(filePath)
         }
 
-        // 3. 업로드된 파일 경로를 주문과 연결
         const updateFilesRes = await fetch(updateFilesApiUrl, {
           method: 'POST',
           headers: {
@@ -785,9 +793,11 @@ export default function NewOrderPage() {
           }),
         })
 
-        const updateFilesData = await updateFilesRes.json().catch(() => ({}))
+        const updateFilesRaw = await updateFilesRes.json().catch(() => ({}))
+        const updateFilesData = parseNcpResponse(updateFilesRaw)
 
         if (!updateFilesRes.ok || updateFilesData?.success === false) {
+          console.error('update-order-files 응답 오류:', updateFilesRaw, updateFilesData)
           throw new Error(updateFilesData?.error || '파일 경로 저장에 실패했습니다.')
         }
       }
