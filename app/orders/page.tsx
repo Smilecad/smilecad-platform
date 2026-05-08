@@ -34,12 +34,12 @@ const STATUS_TABS: OrderStatus[] = [
   '주문 재접수',
 ]
 
+const LIST_ORDERS_API_URL =
+  process.env.NEXT_PUBLIC_NCP_LIST_ORDERS_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-orders'
+
 export default function OrdersPage() {
   const router = useRouter()
-
-  const listOrdersApiUrl =
-    process.env.NEXT_PUBLIC_NCP_LIST_ORDERS_API_URL ||
-    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-orders'
 
   const [orders, setOrders] = useState<OrderItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,7 +74,7 @@ export default function OrdersPage() {
         setLoading(true)
         setError('')
 
-        const res = await fetch(listOrdersApiUrl, {
+        const res = await fetch(LIST_ORDERS_API_URL, {
           method: 'GET',
           cache: 'no-store',
           headers: {
@@ -82,23 +82,37 @@ export default function OrdersPage() {
           },
         })
 
-        const data = await res.json()
+        const text = await res.text()
+        let data: any = null
+
+        try {
+          data = text ? JSON.parse(text) : null
+        } catch {
+          throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          window.localStorage.removeItem('smilecad_token')
+          window.localStorage.removeItem('smilecad_user')
+          router.replace('/login')
+          return
+        }
 
         if (!res.ok || !data?.success) {
-          throw new Error(data?.error || '목록 로드 실패')
+          throw new Error(data?.error || '주문 목록 로드 실패')
         }
 
         setOrders(data.orders || [])
         setUserRole(data.role || storedUser?.role || 'clinic')
       } catch (err: any) {
-        setError(err.message || '목록 로드 실패')
+        setError(err.message || '주문 목록 로드 실패')
       } finally {
         setLoading(false)
       }
     }
 
     fetchOrders()
-  }, [router, listOrdersApiUrl])
+  }, [router])
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -138,7 +152,7 @@ export default function OrdersPage() {
     if (!value) return '-'
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return '-'
-    return date.toLocaleDateString()
+    return date.toLocaleDateString('ko-KR')
   }
 
   if (loading) {
@@ -210,14 +224,14 @@ export default function OrdersPage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-[8px] border border-transparent bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
+              className="rounded-[8px] bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
             />
             <span className="text-[#98a2b3]">~</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-[8px] border border-transparent bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
+              className="rounded-[8px] bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
             />
             <button
               onClick={resetDateFilter}
@@ -242,7 +256,7 @@ export default function OrdersPage() {
           ) : (
             <div className="flex flex-col gap-3">
               {filteredOrders.map((order, index) => {
-                const orderIndex = orders.length - index
+                const orderIndex = filteredOrders.length - index
 
                 return (
                   <div

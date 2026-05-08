@@ -2,7 +2,6 @@
 
 import { ChangeEvent, DragEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import AppTopNav from '@/app/components/AppTopNav'
 
 type ProductType =
@@ -11,6 +10,15 @@ type ProductType =
   | 'NT-regainer'
   | 'NT-lingual arch'
   | 'NT-uprighter'
+
+
+type StoredUser = {
+  id?: number
+  loginId?: string
+  email?: string
+  role?: string
+  phone?: string | null
+}
 
 const PRODUCT_TYPES: ProductType[] = [
   'NT-tainer',
@@ -354,7 +362,8 @@ function SelectButton({
 
 export default function NewOrderPage() {
   const router = useRouter()
-  const { data: session, status } = useSession()
+  const [authToken, setAuthToken] = useState('')
+  const [authUser, setAuthUser] = useState<StoredUser | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -382,45 +391,61 @@ export default function NewOrderPage() {
   const [files, setFiles] = useState<File[]>([])
 
   const [isAgreed, setIsAgreed] = useState(false)
+  
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    const token = window.localStorage.getItem('smilecad_token')
+    const userRaw = window.localStorage.getItem('smilecad_user')
+
+    if (!token) {
       router.replace('/login')
       return
     }
 
-    if (status === 'authenticated' && session?.user?.email) {
-      const email = session.user.email
+    let storedUser: StoredUser | null = null
 
-      const loadClinicInfo = async () => {
-        try {
-          setLoadingClinicInfo(true)
-
-          const profileApiUrl = process.env.NEXT_PUBLIC_NCP_PROFILE_API_URL || ''
-          if (!profileApiUrl) {
-            throw new Error('NEXT_PUBLIC_NCP_PROFILE_API_URL 환경변수가 없습니다.')
-          }
-
-          const url = new URL(profileApiUrl)
-          url.searchParams.set('email', email)
-
-          const res = await fetch(url.toString(), { cache: 'no-store' })
-          const data = await res.json()
-
-          if (data.profile) {
-            setClinicName(data.profile.clinic_name || '')
-            setClinicAddress(data.profile.clinic_address || '')
-          }
-        } catch (err) {
-          console.error('치과 정보 로드 실패:', err)
-        } finally {
-          setLoadingClinicInfo(false)
-        }
-      }
-
-      loadClinicInfo()
+    try {
+      storedUser = userRaw ? JSON.parse(userRaw) : null
+    } catch {
+      storedUser = null
     }
-  }, [status, session, router])
+
+    setAuthToken(token)
+    setAuthUser(storedUser)
+
+    const loadClinicInfo = async () => {
+      try {
+        setLoadingClinicInfo(true)
+
+        const profileApiUrl =
+          process.env.NEXT_PUBLIC_NCP_PROFILE_API_URL ||
+          'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-profile-web'
+
+        const res = await fetch(profileApiUrl, {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data?.error || '치과 정보를 불러오지 못했습니다.')
+        }
+
+        setClinicName(data?.clinicName || '')
+        setClinicAddress(data?.clinicAddress || '')
+      } catch (err) {
+        console.error('치과 정보 로드 실패:', err)
+      } finally {
+        setLoadingClinicInfo(false)
+      }
+    }
+
+    loadClinicInfo()
+  }, [router])
 
   useEffect(() => {
     const loadHolidays = async () => {
@@ -570,8 +595,9 @@ export default function NewOrderPage() {
       return
     }
 
-    if (!session?.user?.email) {
+    if (!authToken || !authUser?.email) {
       setError('로그인 정보가 없습니다. 다시 로그인해주세요.')
+      router.replace('/login')
       return
     }
 
@@ -641,9 +667,12 @@ export default function NewOrderPage() {
       // 1. 주문 기본 정보 저장
       const createOrderRes = await fetch(createOrderApiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
         body: JSON.stringify({
-          email: session.user.email,
+          email: authUser.email,
           clinicName: clinicName.trim(),
           clinicAddress: clinicAddress.trim(),
           patientName: patientName.trim(),
@@ -687,7 +716,10 @@ export default function NewOrderPage() {
           // 2-1. presigned URL 발급
           const keyResponse = await fetch(getUploadUrlApiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${authToken}`,
+            },
             body: JSON.stringify({
               fileName: uniqueFileName,
               fileType: file.type || 'application/octet-stream',
@@ -724,7 +756,10 @@ export default function NewOrderPage() {
         // 3. 업로드된 파일 경로를 주문과 연결
         const updateFilesRes = await fetch(updateFilesApiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
           body: JSON.stringify({
             orderId,
             scanFileNames,
@@ -749,8 +784,8 @@ export default function NewOrderPage() {
     }
   }
 
-  if (status === 'loading') {
-    return <div className="p-10 text-center">로딩 중...</div>
+  if (loadingClinicInfo) {
+    return <div className="p-10 text-center">치과 정보를 불러오는 중...</div>
   }
 
   return (
