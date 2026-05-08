@@ -1,6 +1,6 @@
 // app/layout.tsx
 import './globals.css'
-import { NextAuthProvider } from "./providers"; // '@/app/providers' 대신 상대경로 사용
+import Providers from './providers'
 
 export const metadata = {
   title: 'SmileCAD 주문 플랫폼',
@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <NextAuthProvider>{children}</NextAuthProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   )
