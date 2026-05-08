@@ -7,13 +7,7 @@ export default function HomePage() {
   const router = useRouter()
 
   useEffect(() => {
-    const token = window.localStorage.getItem('smilecad_token')
-
-    if (token) {
-      router.replace('/orders')
-    } else {
-      router.replace('/login')
-    }
+    router.replace('/login?force=1')
   }, [router])
 
   return (

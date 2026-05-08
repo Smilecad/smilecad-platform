@@ -1,3 +1,4 @@
+// app/login/page.tsx
 'use client'
 
 import Script from 'next/script'
@@ -87,14 +88,12 @@ export default function LoginPage() {
   const [isEntrustAgreed, setIsEntrustAgreed] = useState(false)
 
   useEffect(() => {
-    const token = window.localStorage.getItem('smilecad_token')
-    if (token) {
-      router.replace('/orders')
-      return
-    }
+    window.localStorage.removeItem('smilecad_token')
+    window.localStorage.removeItem('smilecad_user')
+    window.sessionStorage.clear()
 
     setPageLoading(false)
-  }, [router])
+  }, [])
 
   const resetMessages = () => {
     setMessage('')
@@ -193,6 +192,16 @@ export default function LoginPage() {
     setLoginIdAvailable(false)
   }
 
+  const readJsonSafely = async (res: Response) => {
+    const text = await res.text()
+
+    try {
+      return text ? JSON.parse(text) : null
+    } catch {
+      throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
+    }
+  }
+
   const checkDuplicateLoginId = async () => {
     resetMessages()
 
@@ -222,7 +231,7 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await res.json()
+      const data = await readJsonSafely(res)
 
       if (!res.ok || !data?.success) {
         setLoginIdChecked(true)
@@ -235,7 +244,9 @@ export default function LoginPage() {
       setLoginIdAvailable(true)
       setMessage('사용 가능한 아이디입니다.')
     } catch (error) {
-      setErrorMessage('아이디 중복 확인 중 오류가 발생했습니다.')
+      setErrorMessage(
+        error instanceof Error ? error.message : '아이디 중복 확인 중 오류가 발생했습니다.'
+      )
       resetLoginIdCheck()
     } finally {
       setCheckingLoginId(false)
@@ -265,7 +276,7 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await res.json()
+      const data = await readJsonSafely(res)
 
       if (!res.ok || !data?.success || !data?.token) {
         throw new Error(data?.error || '로그인에 실패했습니다.')
@@ -300,7 +311,7 @@ export default function LoginPage() {
         body: JSON.stringify({ phone: signupPhoneE164 }),
       })
 
-      const data = await res.json()
+      const data = await readJsonSafely(res)
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || '인증번호 발송에 실패했습니다.')
@@ -338,7 +349,7 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await res.json()
+      const data = await readJsonSafely(res)
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || '인증번호가 올바르지 않습니다.')
@@ -403,7 +414,7 @@ export default function LoginPage() {
         }),
       })
 
-      const signupData = await signupRes.json()
+      const signupData = await readJsonSafely(signupRes)
 
       if (!signupRes.ok || !signupData?.success) {
         throw new Error(signupData?.error || '회원가입에 실패했습니다.')
@@ -420,7 +431,7 @@ export default function LoginPage() {
         }),
       })
 
-      const profileData = await profileRes.json()
+      const profileData = await readJsonSafely(profileRes)
 
       if (!profileRes.ok || !profileData?.success) {
         throw new Error(profileData?.error || '회원 프로필 저장에 실패했습니다.')
@@ -464,7 +475,10 @@ export default function LoginPage() {
 
   return (
     <>
-      <Script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" strategy="afterInteractive" />
+      <Script
+        src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"
+        strategy="afterInteractive"
+      />
 
       <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-6 lg:px-8">
         <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_80px_rgba(15,23,42,0.12)] lg:grid-cols-[1.05fr_0.95fr]">
@@ -512,7 +526,9 @@ export default function LoginPage() {
                     setMode('login')
                   }}
                   className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                    mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    mode === 'login'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   로그인
@@ -524,7 +540,9 @@ export default function LoginPage() {
                     setMode('signup')
                   }}
                   className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                    mode === 'signup' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    mode === 'signup'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   회원가입
@@ -546,7 +564,9 @@ export default function LoginPage() {
               {mode === 'login' ? (
                 <form onSubmit={handleLogin} className="mt-8 space-y-5">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      아이디
+                    </label>
                     <input
                       type="text"
                       value={loginId}
@@ -556,8 +576,11 @@ export default function LoginPage() {
                       required
                     />
                   </div>
+
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      비밀번호
+                    </label>
                     <input
                       type="password"
                       value={loginPassword}
@@ -567,6 +590,7 @@ export default function LoginPage() {
                       required
                     />
                   </div>
+
                   <button
                     type="submit"
                     disabled={loading}
@@ -578,7 +602,9 @@ export default function LoginPage() {
               ) : (
                 <form onSubmit={handleSignup} className="mt-8 space-y-5">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">아이디</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      아이디
+                    </label>
                     <div className="flex gap-3">
                       <input
                         type="text"
@@ -600,12 +626,16 @@ export default function LoginPage() {
                       </button>
                     </div>
                     {loginIdChecked && loginIdAvailable ? (
-                      <p className="mt-2 text-sm text-emerald-600">사용 가능한 아이디입니다.</p>
+                      <p className="mt-2 text-sm text-emerald-600">
+                        사용 가능한 아이디입니다.
+                      </p>
                     ) : null}
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">치과명</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      치과명
+                    </label>
                     <input
                       type="text"
                       value={signupClinicName}
@@ -616,7 +646,9 @@ export default function LoginPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">치과 주소</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      치과 주소
+                    </label>
                     <div className="grid grid-cols-[140px_1fr] gap-3">
                       <button
                         type="button"
@@ -693,7 +725,9 @@ export default function LoginPage() {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      비밀번호
+                    </label>
                     <input
                       type="password"
                       value={signupPassword}
@@ -702,8 +736,11 @@ export default function LoginPage() {
                       required
                     />
                   </div>
+
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">비밀번호 확인</label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">
+                      비밀번호 확인
+                    </label>
                     <input
                       type="password"
                       value={signupPasswordConfirm}
@@ -728,6 +765,7 @@ export default function LoginPage() {
                           [필수] 개인정보 처리 위탁 계약 동의
                         </span>
                       </label>
+
                       <div className="h-[80px] overflow-y-auto rounded-xl border border-blue-100 bg-slate-50 p-3 text-[11px] leading-relaxed text-slate-600 shadow-inner">
                         <strong>제1조 (목적 및 대상)</strong>
                         <br />

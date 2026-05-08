@@ -55,7 +55,7 @@ export default function OrdersPage() {
     const userRaw = window.localStorage.getItem('smilecad_user')
 
     if (!token) {
-      router.replace('/login')
+      router.replace('/login?force=1')
       return
     }
 
@@ -94,7 +94,7 @@ export default function OrdersPage() {
         if (res.status === 401 || res.status === 403) {
           window.localStorage.removeItem('smilecad_token')
           window.localStorage.removeItem('smilecad_user')
-          router.replace('/login')
+          router.replace('/login?force=1')
           return
         }
 
