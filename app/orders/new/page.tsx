@@ -93,15 +93,41 @@ function getRequiredEnv(name: string) {
 }
 
 function parseNcpResponse(raw: any) {
-  if (typeof raw?.body === 'string') {
+  const parseJsonString = (value: any) => {
+    if (typeof value !== 'string') return value
+
     try {
-      return JSON.parse(raw.body)
+      return JSON.parse(value)
     } catch {
-      return raw
+      return value
     }
   }
 
-  return raw?.body || raw
+  const candidates = [
+    raw?.body,
+    raw?.result?.body,
+    raw?.response?.body,
+    raw?.response?.result?.body,
+    raw?.response?.result,
+    raw?.result,
+    raw,
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue
+
+    const parsed = parseJsonString(candidate)
+
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      ('success' in parsed || 'orderId' in parsed || 'error' in parsed)
+    ) {
+      return parsed
+    }
+  }
+
+  return raw
 }
 
 function SectionTitle({ title }: { title: string }) {
