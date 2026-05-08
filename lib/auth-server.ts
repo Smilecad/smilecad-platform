@@ -1,100 +1,33 @@
-import { createClient } from '@supabase/supabase-js'
-import { supabaseAdmin } from '@/lib/supabase/admin'
+// lib/auth-server.ts
 
 export type ServerProfile = {
-  id: string
+  id: string | number
   role: 'admin' | 'clinic'
   clinic_name: string | null
 }
 
 export type AuthenticatedServerUser = {
   user: {
-    id: string
+    id: string | number
+    loginId?: string | null
     email?: string | null
   }
   profile: ServerProfile
 }
 
-function getAccessTokenFromRequest(request: Request) {
-  const authHeader =
-    request.headers.get('authorization') || request.headers.get('Authorization')
-
-  if (!authHeader) return null
-
-  const [type, token] = authHeader.split(' ')
-
-  if (type !== 'Bearer' || !token) return null
-
-  return token
-}
-
-async function fetchServerProfile(userId: string): Promise<ServerProfile> {
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .select('id, role, clinic_name')
-    .eq('id', userId)
-    .limit(1)
-
-  if (error) {
-    throw new Error('프로필 정보를 확인할 수 없습니다.')
-  }
-
-  const profile = data?.[0]
-
-  if (!profile) {
-    throw new Error('프로필 정보를 확인할 수 없습니다.')
-  }
-
-  if (profile.role !== 'admin' && profile.role !== 'clinic') {
-    throw new Error('유효하지 않은 프로필 권한입니다.')
-  }
-
-  return {
-    id: profile.id,
-    role: profile.role,
-    clinic_name: profile.clinic_name,
-  }
-}
-
+/**
+ * Supabase Auth 제거 후 임시 호환용 함수입니다.
+ *
+ * 현재 인증은 다음 구조로 이전되었습니다.
+ * - 클라이언트: localStorage의 smilecad_token 사용
+ * - 백엔드: NCP Cloud Functions에서 JWT 검증
+ * - DB 접근: NCP Cloud Functions에서 PostgreSQL 직접 접근
+ *
+ * Next.js 서버 라우트에서 이 함수를 계속 사용하는 코드는
+ * NCP Cloud Functions API 호출 방식으로 교체해야 합니다.
+ */
 export async function getAuthenticatedServerUser(
-  request: Request
+  _request: Request
 ): Promise<AuthenticatedServerUser> {
-  const accessToken = getAccessTokenFromRequest(request)
-
-  if (!accessToken) {
-    throw new Error('인증 토큰이 없습니다.')
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !anonKey) {
-    throw new Error('Supabase public environment variables are not set.')
-  }
-
-  const supabase = createClient(supabaseUrl, anonKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser(accessToken)
-
-  if (userError || !user) {
-    throw new Error('로그인 사용자 확인에 실패했습니다.')
-  }
-
-  const profile = await fetchServerProfile(user.id)
-
-  return {
-    user: {
-      id: user.id,
-      email: user.email,
-    },
-    profile,
-  }
+  throw new Error('getAuthenticatedServerUser는 NCP JWT 구조로 이전 중입니다.')
 }

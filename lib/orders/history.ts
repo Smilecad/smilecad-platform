@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/supabase/admin'
+// lib/orders/history.ts
 
 type CreateOrderHistoryParams = {
   orderId: string
@@ -8,18 +8,20 @@ type CreateOrderHistoryParams = {
   createdBy?: string | null
 }
 
-export async function createOrderHistory(params: CreateOrderHistoryParams) {
-  const { orderId, status, title, description, createdBy } = params
-
-  const { error } = await supabaseAdmin.from('order_status_history').insert({
-    order_id: orderId,
-    status,
-    title,
-    description: description || null,
-    created_by: createdBy || null,
-  })
-
-  if (error) {
-    throw new Error(`주문 히스토리 저장 실패: ${error.message}`)
-  }
+/**
+ * 기존 Supabase 기반 주문 히스토리 저장 함수는 NCP Cloud Functions 구조로 이전 중입니다.
+ *
+ * 새 구조에서는 주문 상태 변경 시:
+ * - 프론트 → update-order-status Cloud Function 호출
+ * - Cloud Function → orders 상태 업데이트
+ * - Cloud Function → order_status_history insert
+ *
+ * 흐름으로 처리해야 합니다.
+ *
+ * 이 함수는 기존 import 호환을 위해 임시로 남겨둡니다.
+ */
+export async function createOrderHistory(
+  _params: CreateOrderHistoryParams
+): Promise<void> {
+  return
 }

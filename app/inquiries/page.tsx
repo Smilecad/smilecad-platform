@@ -1,203 +1,418 @@
-// app/inquiries/page.tsx
+// app/admin/inquiries/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useSession } from 'next-auth/react'
 import AppTopNav from '@/app/components/AppTopNav'
 
-export default function InquiriesPage() {
+const LIST_INQUIRIES_API_URL =
+  process.env.NEXT_PUBLIC_NCP_LIST_INQUIRIES_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-inquiries'
+
+const REPLY_INQUIRY_API_URL =
+  process.env.NEXT_PUBLIC_NCP_REPLY_INQUIRY_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/reply-inquiry'
+
+type InquiryItem = {
+  id: string
+  user_id?: string | null
+  user_role?: string | null
+  clinic_name?: string | null
+  clinic_address?: string | null
+  clinic_phone?: string | null
+  title?: string | null
+  category?: string | null
+  content?: string | null
+  status?: string | null
+  admin_reply?: string | null
+  replied_at?: string | null
+  replied_by?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+function classNames(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(' ')
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function StatusBadge({ status }: { status?: string | null }) {
+  if (status === '답변 완료') {
+    return (
+      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+        답변 완료
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+      접수
+    </span>
+  )
+}
+
+export default function AdminInquiriesPage() {
   const router = useRouter()
-  const { data: session, status: sessionStatus } = useSession()
 
-  const [inquiries, setInquiries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [userRole, setUserRole] = useState('clinic')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-
-  // 답변 입력을 위한 상태
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [message, setMessage] = useState('')
+  const [items, setItems] = useState<InquiryItem[]>([])
+  const [selectedId, setSelectedId] = useState('')
   const [replyText, setReplyText] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [userRole, setUserRole] = useState('clinic')
 
-  const fetchInquiries = async () => {
-    if (!session?.user?.email) return
+  const readJsonSafely = async (res: Response) => {
+    const text = await res.text()
+
+    try {
+      return text ? JSON.parse(text) : null
+    } catch {
+      throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
+    }
+  }
+
+  const handleAuthError = useCallback(
+    (status: number) => {
+      if (status === 401 || status === 403) {
+        window.localStorage.removeItem('smilecad_token')
+        window.localStorage.removeItem('smilecad_user')
+        router.replace('/login?force=1')
+        return true
+      }
+
+      return false
+    },
+    [router]
+  )
+
+  const loadData = useCallback(async () => {
+    const token = window.localStorage.getItem('smilecad_token')
+
+    if (!token) {
+      router.replace('/login?force=1')
+      return
+    }
+
     try {
       setLoading(true)
-      const res = await fetch(`/api/inquiries?email=${session?.user?.email}`)
-      const data = await res.json()
-      if (res.ok) {
-        setInquiries(data.inquiries || [])
-        setUserRole(data.role || 'clinic')
+      setErrorMessage('')
+      setMessage('')
+
+      const res = await fetch(LIST_INQUIRIES_API_URL, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (handleAuthError(res.status)) return
+
+      const data = await readJsonSafely(res)
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || '문의 목록을 불러오지 못했습니다.')
+      }
+
+      const role = data.role || 'clinic'
+      setUserRole(role)
+
+      if (role !== 'admin') {
+        throw new Error('관리자만 접근할 수 있습니다.')
+      }
+
+      const nextItems: InquiryItem[] = data.inquiries || data.items || []
+      setItems(nextItems)
+
+      if (nextItems.length > 0) {
+        const firstId =
+          selectedId && nextItems.some((item) => item.id === selectedId)
+            ? selectedId
+            : nextItems[0].id
+
+        setSelectedId(firstId)
+
+        const selected = nextItems.find((item) => item.id === firstId)
+        setReplyText(selected?.admin_reply || '')
+      } else {
+        setSelectedId('')
+        setReplyText('')
       }
     } catch (err) {
-      console.error("데이터 로드 실패:", err)
+      console.error(err)
+      setErrorMessage(err instanceof Error ? err.message : '문의 목록 조회 중 오류가 발생했습니다.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [router, handleAuthError, selectedId])
 
   useEffect(() => {
-    if (sessionStatus === 'authenticated') {
-      fetchInquiries()
-    } else if (sessionStatus === 'unauthenticated') {
-      router.replace('/login')
-    }
-  }, [sessionStatus])
+    loadData()
+  }, [loadData])
 
-  const toggleExpand = (id: string, currentReply: string) => {
-    if (expandedId === id) {
-      setExpandedId(null)
-      setReplyText('')
-    } else {
-      setExpandedId(id)
-      setReplyText(currentReply || '') // 기존 답변이 있으면 불러오기
-    }
-  }
+  const selectedItem = useMemo(() => {
+    return items.find((item) => item.id === selectedId) || null
+  }, [items, selectedId])
 
-  // 🚀 답변 등록 함수
-  const handleReplySubmit = async (inquiryId: string) => {
-    if (!replyText.trim()) return alert('답변 내용을 입력해주세요.')
+  useEffect(() => {
+    setReplyText(selectedItem?.admin_reply || '')
+  }, [selectedItem])
+
+  const handleReplySubmit = async (e: FormEvent) => {
+    e.preventDefault()
+
+    const token = window.localStorage.getItem('smilecad_token')
+
+    if (!token) {
+      router.replace('/login?force=1')
+      return
+    }
+
+    if (!selectedItem) {
+      setErrorMessage('문의를 선택해주세요.')
+      return
+    }
+
+    if (!replyText.trim()) {
+      setErrorMessage('답변 내용을 입력해주세요.')
+      return
+    }
 
     try {
-      setIsSubmitting(true)
-      const res = await fetch('/api/inquiries/reply', {
+      setSubmitting(true)
+      setErrorMessage('')
+      setMessage('')
+
+      const res = await fetch(REPLY_INQUIRY_API_URL, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inquiryId, adminReply: replyText })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          inquiryId: selectedItem.id,
+          adminReply: replyText.trim(),
+        }),
       })
 
-      if (res.ok) {
-        alert('답변이 등록되었습니다.')
-        fetchInquiries() // 목록 새로고침
-      } else {
-        alert('답변 등록에 실패했습니다.')
+      if (handleAuthError(res.status)) return
+
+      const data = await readJsonSafely(res)
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || '답변 저장에 실패했습니다.')
       }
+
+      setMessage('답변이 저장되었습니다.')
+      await loadData()
     } catch (err) {
-      alert('오류가 발생했습니다.')
+      console.error(err)
+      setErrorMessage(err instanceof Error ? err.message : '답변 저장 중 오류가 발생했습니다.')
     } finally {
-      setIsSubmitting(false)
+      setSubmitting(false)
     }
   }
 
-  if (sessionStatus === 'loading' || loading) {
-    return <div className="flex min-h-screen items-center justify-center font-bold text-slate-500 text-lg">데이터를 불러오는 중입니다...</div>
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
+        <div className="mx-auto w-full max-w-[1480px]">
+          <div className="rounded-[28px] border border-[#d9e0ea] bg-white px-8 py-10 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+            <div className="text-[15px] font-semibold text-[#667085]">
+              문의 관리 페이지를 불러오는 중입니다...
+            </div>
+          </div>
+        </div>
+      </main>
+    )
   }
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
-      <div className="mx-auto w-full max-w-[1200px]">
-        <AppTopNav current="inquiries" />
+      <div className="mx-auto w-full max-w-[1480px]">
+        <AppTopNav current="admin-inquiries" />
 
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">
-              {userRole === 'admin' ? '전체 문의 관리 (관리자)' : '나의 문의 내역'}
-            </div>
-            <div className="mt-2 text-[14px] text-[#98a2b3]">
-              {userRole === 'admin' 
-                ? '치과에서 접수한 모든 문의를 확인하고 답변을 등록합니다.' 
-                : '접수하신 문의와 답변 상태를 확인하실 수 있습니다.'}
-            </div>
+        {message ? (
+          <div className="mb-6 rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            {message}
           </div>
-          {userRole !== 'admin' && (
+        ) : null}
+
+        {errorMessage ? (
+          <div className="mb-6 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        {userRole !== 'admin' ? (
+          <div className="rounded-[28px] border border-red-100 bg-white p-10 text-center shadow-sm">
+            <div className="text-[18px] font-black text-red-600">관리자만 접근할 수 있습니다.</div>
             <button
-              onClick={() => router.push('/inquiry')}
-              className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-lg transition hover:bg-[#2563eb]"
+              type="button"
+              onClick={() => router.push('/orders')}
+              className="mt-6 rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white"
             >
-              + 새 문의하기
+              주문 목록으로 이동
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[430px_1fr]">
+            <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+              <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
+                문의 목록
+              </div>
 
-        <div className="overflow-hidden rounded-[28px] border border-[#d9e0ea] bg-white shadow-sm">
-          {inquiries.length === 0 ? (
-            <div className="py-20 text-center text-[15px] font-semibold text-[#98a2b3]">내역이 없습니다.</div>
-          ) : (
-            <div className="flex flex-col">
-              {inquiries.map((inq) => (
-                <div key={inq.id} className="border-b border-[#eef2f6] last:border-none">
-                  
-                  <div 
-                    onClick={() => toggleExpand(inq.id, inq.admin_reply)}
-                    className="flex cursor-pointer items-center justify-between p-6 transition hover:bg-[#f8fafc]"
-                  >
-                    <div className="flex items-center gap-5">
-                      <span className={`flex w-[85px] shrink-0 items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-black ${
-                        inq.status === '답변 완료' ? 'bg-[#f0fdf4] text-[#16a34a] border border-[#bbf7d0]' : 'bg-slate-100 text-slate-500 border border-slate-200'
-                      }`}>
-                        {inq.status}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-[16px] font-extrabold text-[#1f2937]">{inq.title}</span>
-                        <div className="mt-1 flex items-center gap-3 text-[12px] font-bold text-[#98a2b3]">
-                          <span>{inq.category}</span>
-                          {userRole === 'admin' && (
-                            <span className="text-blue-500">| {inq.clinic_name}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-slate-400">
-                      <svg className={`h-5 w-5 transition-transform ${expandedId === inq.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
+              <div className="p-4">
+                {items.length === 0 ? (
+                  <div className="rounded-[16px] border border-dashed border-[#d9e0ea] bg-[#fbfcfe] px-5 py-10 text-center text-[14px] text-[#98a2b3]">
+                    등록된 문의가 없습니다.
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    {items.map((item) => {
+                      const selected = item.id === selectedId
 
-                  {expandedId === inq.id && (
-                    <div className="bg-[#f8fafc] p-8 border-t border-[#eef2f6] space-y-6">
-                      {/* 질문 내용 */}
-                      <div className="rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-full bg-slate-800 text-[12px] font-bold text-white flex items-center justify-center">Q</span>
-                          <span className="text-[14px] font-black text-slate-800">문의 내용</span>
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSelectedId(item.id)}
+                          className={classNames(
+                            'w-full rounded-[16px] border px-4 py-4 text-left transition',
+                            selected
+                              ? 'border-[#9db7ff] bg-[#f5f9ff]'
+                              : 'border-[#e4e8ef] bg-white hover:bg-[#fbfcfe]'
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="truncate text-[14px] font-bold text-[#344054]">
+                              {item.title || '-'}
+                            </div>
+                            <StatusBadge status={item.status} />
+                          </div>
+
+                          <div className="mt-2 text-[12px] font-semibold text-[#98a2b3]">
+                            {item.clinic_name || '-'} · {item.category || '-'}
+                          </div>
+
+                          <div className="mt-1 text-[12px] text-[#98a2b3]">
+                            {formatDateTime(item.created_at)}
+                          </div>
+
+                          <div className="mt-2 line-clamp-2 text-[13px] leading-6 text-[#667085]">
+                            {item.content || '-'}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+                <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
+                  문의 상세
+                </div>
+
+                <div className="p-6">
+                  {!selectedItem ? (
+                    <div className="rounded-[16px] border border-dashed border-[#d9e0ea] bg-[#fbfcfe] px-5 py-10 text-center text-[14px] text-[#98a2b3]">
+                      문의를 선택해주세요.
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      <div className="rounded-[16px] border border-[#e4e8ef] bg-[#f9fbfd] p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[20px] font-extrabold text-[#1f2937]">
+                            {selectedItem.title || '-'}
+                          </div>
+                          <StatusBadge status={selectedItem.status} />
                         </div>
-                        <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-[#475467]">{inq.content}</p>
+
+                        <div className="mt-3 text-[13px] font-semibold text-[#98a2b3]">
+                          {selectedItem.category || '-'} · {formatDateTime(selectedItem.created_at)}
+                        </div>
+
+                        <div className="mt-5 whitespace-pre-wrap text-[14px] leading-7 text-[#344054]">
+                          {selectedItem.content || '-'}
+                        </div>
                       </div>
 
-                      {/* 답변 영역 */}
-                      <div className="rounded-2xl bg-blue-50/50 p-6 border border-blue-100">
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-full bg-blue-600 text-[12px] font-bold text-white flex items-center justify-center">A</span>
-                          <span className="text-[14px] font-black text-blue-800">관리자 답변</span>
+                      <div className="rounded-[16px] border border-[#e4e8ef] bg-white p-5">
+                        <div className="mb-3 text-[16px] font-extrabold text-[#263142]">
+                          치과 정보
                         </div>
-
-                        {userRole === 'admin' ? (
-                          /* 🛠️ 관리자: 답변 작성 칸 표시 */
-                          <div className="space-y-4">
-                            <textarea
-                              value={replyText}
-                              onChange={(e) => setReplyText(e.target.value)}
-                              placeholder="답변 내용을 입력해주세요."
-                              className="w-full min-h-[120px] rounded-xl border border-blue-200 bg-white p-4 text-[14px] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 transition"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                onClick={() => handleReplySubmit(inq.id)}
-                                disabled={isSubmitting}
-                                className="rounded-xl bg-blue-600 px-6 py-2.5 text-[14px] font-black text-white hover:bg-blue-700 transition disabled:opacity-50"
-                              >
-                                {inq.admin_reply ? '답변 수정하기' : '답변 등록하기'}
-                              </button>
-                            </div>
+                        <div className="space-y-2 text-[14px] text-[#344054]">
+                          <div>
+                            <span className="font-bold text-[#98a2b3]">치과명:</span>{' '}
+                            {selectedItem.clinic_name || '-'}
                           </div>
-                        ) : (
-                          /* 🦷 치과: 답변 내용 표시 */
-                          inq.admin_reply ? (
-                            <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-blue-900">{inq.admin_reply}</p>
-                          ) : (
-                            <p className="text-[14px] font-bold text-slate-400 text-center py-4 italic">아직 등록된 답변이 없습니다. 확인 중입니다.</p>
-                          )
-                        )}
+                          <div>
+                            <span className="font-bold text-[#98a2b3]">연락처:</span>{' '}
+                            {selectedItem.clinic_phone || '-'}
+                          </div>
+                          <div className="whitespace-pre-wrap break-all">
+                            <span className="font-bold text-[#98a2b3]">주소:</span>{' '}
+                            {selectedItem.clinic_address || '-'}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
-
                 </div>
-              ))}
+              </div>
+
+              <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
+                  답변 작성
+                </div>
+
+                <form onSubmit={handleReplySubmit} className="p-6">
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="문의에 대한 답변을 입력해주세요."
+                    className="min-h-[220px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
+                  />
+
+                  {selectedItem?.replied_at ? (
+                    <div className="mt-3 text-[12px] font-semibold text-[#98a2b3]">
+                      마지막 답변 저장: {formatDateTime(selectedItem.replied_at)}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-5 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={submitting || !selectedItem}
+                      className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:opacity-60"
+                    >
+                      {submitting ? '저장 중...' : '답변 저장'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   )
