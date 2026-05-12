@@ -747,13 +747,16 @@ export default function NewOrderPage() {
 
           const uploadResponse = await fetch(uploadUrl, {
             method: 'PUT',
+            headers: {
+              'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+            },
             body: file,
           })
 
           if (!uploadResponse.ok) {
             const uploadErrorText = await uploadResponse.text().catch(() => '')
             console.error('Object Storage 업로드 실패:', uploadResponse.status, uploadErrorText)
-            throw new Error(`파일 전송 실패: ${file.name}`)
+            throw new Error(`파일 전송 실패: ${file.name} / 상태코드 ${uploadResponse.status}`)
           }
 
           scanFileNames.push(file.name)
