@@ -52,6 +52,17 @@ function ToothIcon({
   )
 }
 
+function sanitizeDownloadFileName(fileName?: string | null) {
+  const raw = String(fileName || '').trim()
+
+  if (!raw) return 'scan-file.stl'
+
+  return raw
+    .replace(/[\r\n]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim() || 'scan-file.stl'
+}
+
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -60,6 +71,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
   const [userRole, setUserRole] = useState('clinic')
 
@@ -181,7 +193,17 @@ export default function OrderDetailPage() {
     const token = getTokenOrRedirect()
     if (!token) return
 
+    const cleanPath = String(path || '').trim()
+    const cleanFileName = sanitizeDownloadFileName(fileName)
+
+    if (!cleanPath) {
+      alert('다운로드할 파일 경로가 없습니다.')
+      return
+    }
+
     try {
+      setDownloading(true)
+
       const res = await fetch(GET_DOWNLOAD_URL_API_URL, {
         method: 'POST',
         headers: {
@@ -189,8 +211,16 @@ export default function OrderDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          filePath: path,
+          authToken: token,
+          token,
           orderId: id,
+          filePath: cleanPath,
+          objectKey: cleanPath,
+          key: cleanPath,
+          path: cleanPath,
+          fileName: cleanFileName,
+          filename: cleanFileName,
+          name: cleanFileName,
         }),
       })
 
@@ -202,26 +232,46 @@ export default function OrderDetailPage() {
         throw new Error(data?.error || '다운로드 URL 발급에 실패했습니다.')
       }
 
+      const fileRes = await fetch(data.downloadUrl)
+
+      if (!fileRes.ok) {
+        throw new Error(`파일 다운로드에 실패했습니다. 상태코드 ${fileRes.status}`)
+      }
+
+      const blob = await fileRes.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+
       const link = document.createElement('a')
-      link.href = data.downloadUrl
-      link.setAttribute('download', fileName || 'download')
+      link.href = blobUrl
+      link.download = cleanFileName || data.fileName || 'scan-file.stl'
       document.body.appendChild(link)
       link.click()
-      document.body.removeChild(link)
+      link.remove()
+
+      window.URL.revokeObjectURL(blobUrl)
     } catch (err: any) {
       alert(err.message || '다운로드 실패')
+    } finally {
+      setDownloading(false)
     }
   }
 
   const handleDownloadAll = async () => {
     if (!order?.scan_file_paths) return
 
-    const paths = String(order.scan_file_paths).split(',')
-    const names = String(order.scan_file_names || '').split(',')
+    const paths = String(order.scan_file_paths)
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+
+    const names = String(order.scan_file_names || '')
+      .split(',')
+      .map((value) => value.trim())
 
     for (let i = 0; i < paths.length; i += 1) {
-      await handleDownload(paths[i].trim(), names[i]?.trim() || `scan-file-${i + 1}`)
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const originalName = names[i] || `scan-file-${i + 1}.stl`
+      await handleDownload(paths[i], originalName)
+      await new Promise((resolve) => setTimeout(resolve, 700))
     }
   }
 
@@ -478,9 +528,10 @@ export default function OrderDetailPage() {
                   {order.scan_file_paths && (
                     <button
                       onClick={handleDownloadAll}
-                      className="rounded-lg bg-blue-50 px-4 py-1.5 text-[12px] font-extrabold text-blue-600 hover:bg-blue-100"
+                      disabled={downloading}
+                      className="rounded-lg bg-blue-50 px-4 py-1.5 text-[12px] font-extrabold text-blue-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      전체 다운로드 ↓
+                      {downloading ? '다운로드 중...' : '전체 다운로드 ↓'}
                     </button>
                   )}
                 </div>
@@ -493,11 +544,11 @@ export default function OrderDetailPage() {
                         const fileName =
                           String(order.scan_file_names || '')
                             .split(',')
-                            [i]?.trim() || `scan-file-${i + 1}`
+                            [i]?.trim() || `scan-file-${i + 1}.stl`
 
                         return (
                           <div
-                            key={i}
+                            key={`${p}-${i}`}
                             className="flex w-full items-center justify-between rounded-xl border border-[#eef2f6] bg-[#f8fafc] p-4 transition hover:border-blue-300"
                           >
                             <span className="truncate pr-4 text-[13px] font-bold text-[#1f2937]">
@@ -505,7 +556,8 @@ export default function OrderDetailPage() {
                             </span>
                             <button
                               onClick={() => handleDownload(p.trim(), fileName)}
-                              className="shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-blue-500 hover:bg-blue-50"
+                              disabled={downloading}
+                              className="shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-blue-500 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               다운로드
                             </button>
