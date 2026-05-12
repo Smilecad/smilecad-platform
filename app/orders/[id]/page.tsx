@@ -8,6 +8,12 @@ import AppTopNav from '@/app/components/AppTopNav'
 const PERMANENT_TOP = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]
 const PERMANENT_BOTTOM = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
 
+const PRIMARY_TOP = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65]
+const PRIMARY_BOTTOM = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
+
+const PERMANENT_SET = new Set([...PERMANENT_TOP, ...PERMANENT_BOTTOM].map(String))
+const PRIMARY_SET = new Set([...PRIMARY_TOP, ...PRIMARY_BOTTOM].map(String))
+
 const GET_ORDER_DETAIL_API_URL =
   process.env.NEXT_PUBLIC_NCP_GET_ORDER_DETAIL_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-order-detail'
@@ -407,6 +413,45 @@ export default function OrderDetailPage() {
       .filter(Boolean)
   }, [order])
 
+  const selectedToothType = useMemo<'permanent' | 'primary' | 'mixed'>(() => {
+    const hasPrimary = selectedTeethList.some((tooth) => PRIMARY_SET.has(tooth))
+    const hasPermanent = selectedTeethList.some((tooth) => PERMANENT_SET.has(tooth))
+
+    if (hasPrimary && !hasPermanent) return 'primary'
+    if (hasPermanent && !hasPrimary) return 'permanent'
+
+    return 'mixed'
+  }, [selectedTeethList])
+
+  const toothChartRows = useMemo<
+    {
+      label: string
+      teeth: number[]
+      flipped: boolean
+    }[]
+  >(() => {
+    if (selectedToothType === 'primary') {
+      return [
+        { label: '유치 상악', teeth: PRIMARY_TOP, flipped: true },
+        { label: '유치 하악', teeth: PRIMARY_BOTTOM, flipped: false },
+      ]
+    }
+
+    if (selectedToothType === 'permanent') {
+      return [
+        { label: '영구치 상악', teeth: PERMANENT_TOP, flipped: true },
+        { label: '영구치 하악', teeth: PERMANENT_BOTTOM, flipped: false },
+      ]
+    }
+
+    return [
+      { label: '영구치 상악', teeth: PERMANENT_TOP, flipped: true },
+      { label: '영구치 하악', teeth: PERMANENT_BOTTOM, flipped: false },
+      { label: '유치 상악', teeth: PRIMARY_TOP, flipped: true },
+      { label: '유치 하악', teeth: PRIMARY_BOTTOM, flipped: false },
+    ]
+  }, [selectedToothType])
+
   const scanFiles = useMemo<{ path: string; name: string }[]>(() => {
     const paths = String(order?.scan_file_paths || '')
       .split(',')
@@ -757,48 +802,35 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="overflow-x-auto pb-2">
-              <div className="min-w-[900px]">
-                <div className="grid grid-cols-[70px_1fr] items-center gap-4">
-                  <p className="text-[16px] font-black text-slate-500">상악</p>
-                  <div className="grid grid-cols-16 gap-4">
-                    {PERMANENT_TOP.map((n) => (
-                      <div key={n} className="flex flex-col items-center gap-2">
-                        <ToothIcon selected={selectedTeethList.includes(String(n))} flipped />
-                        <span
-                          className={`text-[13px] font-black ${
-                            selectedTeethList.includes(String(n))
-                              ? 'text-blue-700'
-                              : 'text-slate-600'
-                          }`}
-                        >
-                          {n}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className={selectedToothType === 'primary' ? 'min-w-[620px]' : 'min-w-[900px]'}>
+                {toothChartRows.map((row, rowIndex) => (
+                  <div key={row.label}>
+                    {rowIndex > 0 && <div className="my-6 h-px w-full bg-slate-200" />}
 
-                <div className="my-6 h-px w-full bg-slate-200" />
+                    <div className="grid grid-cols-[90px_1fr] items-center gap-4">
+                      <p className="text-[15px] font-black text-slate-500">{row.label}</p>
 
-                <div className="grid grid-cols-[70px_1fr] items-center gap-4">
-                  <p className="text-[16px] font-black text-slate-500">하악</p>
-                  <div className="grid grid-cols-16 gap-4">
-                    {PERMANENT_BOTTOM.map((n) => (
-                      <div key={n} className="flex flex-col items-center gap-2">
-                        <ToothIcon selected={selectedTeethList.includes(String(n))} />
-                        <span
-                          className={`text-[13px] font-black ${
-                            selectedTeethList.includes(String(n))
-                              ? 'text-blue-700'
-                              : 'text-slate-600'
-                          }`}
-                        >
-                          {n}
-                        </span>
+                      <div className="flex items-center justify-between gap-4">
+                        {row.teeth.map((n) => {
+                          const selected = selectedTeethList.includes(String(n))
+
+                          return (
+                            <div key={n} className="flex flex-col items-center gap-2">
+                              <ToothIcon selected={selected} flipped={row.flipped} />
+                              <span
+                                className={`text-[13px] font-black ${
+                                  selected ? 'text-blue-700' : 'text-slate-600'
+                                }`}
+                              >
+                                {n}
+                              </span>
+                            </div>
+                          )
+                        })}
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
