@@ -20,6 +20,79 @@ const GET_DOWNLOAD_URL_API_URL =
   process.env.NEXT_PUBLIC_NCP_GET_DOWNLOAD_URL_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-download-url'
 
+function IconUser() {
+  return (
+    <svg viewBox="0 0 48 48" className="h-12 w-12" fill="none">
+      <circle cx="24" cy="17" r="8" stroke="currentColor" strokeWidth="3" />
+      <path
+        d="M10 40C12.8 31.5 18 28 24 28C30 28 35.2 31.5 38 40"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function IconClock() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M12 7V12L15.5 14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconDocument() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none">
+      <path
+        d="M7 3H14L19 8V21H7V3Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M14 3V8H19" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M10 13H16M10 17H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function IconTooth() {
+  return (
+    <svg viewBox="0 0 36 48" className="h-7 w-7" fill="none">
+      <path
+        d="M9 5C6 10 6 17 8 23C9 27 9 33 9 39C9 44 12 45 14 40L16.5 29C17 26.5 19 26.5 19.5 29L22 40C24 45 27 44 27 39C27 33 27 27 28 23C30 17 30 10 27 5C24 1 12 1 9 5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function IconDownload() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+      <path
+        d="M12 4V14M12 14L8 10M12 14L16 10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M5 19H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function ToothIcon({
   selected,
   flipped = false,
@@ -28,26 +101,26 @@ function ToothIcon({
   flipped?: boolean
 }) {
   return (
-    <div
-      className={`flex h-[60px] w-[36px] items-center justify-center rounded-[12px] border-2 transition-all duration-300 ${
-        selected
-          ? 'border-blue-500 bg-blue-50 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
-          : 'border-[#f1f5f9] bg-white hover:border-[#e2e8f0]'
-      }`}
-    >
-      <svg
-        viewBox="0 0 36 58"
-        className={`h-[48px] w-[28px] ${flipped ? 'rotate-180' : ''}`}
-        fill={selected ? '#3b82f6' : 'none'}
-        stroke={selected ? '#2563eb' : '#94a3b8'}
-        strokeWidth="1.8"
+    <div className="flex flex-col items-center gap-2">
+      <div
+        className={`flex h-[48px] w-[34px] items-center justify-center rounded-[13px] transition-all duration-300 ${
+          selected ? 'bg-blue-500 shadow-lg shadow-blue-100' : 'bg-white'
+        }`}
       >
-        <path
-          d="M9 6 C7 12, 7 19, 9 26 C10 31, 10 37, 10 45 C10 50, 12 51, 14 46 L16.5 34 C17 31, 19 31, 19.5 34 L22 46 C24 51, 26 50, 26 45 C26 37, 26 31, 27 26 C29 19, 29 12, 27 6 M9 6 C12 2, 24 2, 27 6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+        <svg
+          viewBox="0 0 36 58"
+          className={`h-[42px] w-[27px] ${flipped ? 'rotate-180' : ''}`}
+          fill={selected ? '#2563eb' : 'none'}
+          stroke={selected ? '#ffffff' : '#b6c2d2'}
+          strokeWidth="1.8"
+        >
+          <path
+            d="M9 6 C7 12, 7 19, 9 26 C10 31, 10 37, 10 45 C10 50, 12 51, 14 46 L16.5 34 C17 31, 19 31, 19.5 34 L22 46 C24 51, 26 50, 26 45 C26 37, 26 31, 27 26 C29 19, 29 12, 27 6 M9 6 C12 2, 24 2, 27 6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
     </div>
   )
 }
@@ -61,6 +134,51 @@ function sanitizeDownloadFileName(fileName?: string | null) {
     .replace(/[\r\n]/g, '')
     .replace(/[\\/:*?"<>|]/g, '_')
     .trim() || 'scan-file.stl'
+}
+
+function normalizeGender(value?: string | null) {
+  const raw = String(value || '').trim().toLowerCase()
+
+  if (!raw) return ''
+  if (raw === 'male' || raw === 'm' || raw === '남') return '남'
+  if (raw === 'female' || raw === 'f' || raw === '여') return '여'
+
+  return String(value)
+}
+
+function getAgeFromBirth(value?: string | null) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const today = new Date()
+  let age = today.getFullYear() - date.getFullYear()
+  const monthDiff = today.getMonth() - date.getMonth()
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    age -= 1
+  }
+
+  return age > 0 ? `${age}세` : ''
+}
+
+function statusStyle(status?: string | null) {
+  const value = status || '접수 대기'
+
+  if (value.includes('완료')) {
+    return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('작업') || value.includes('제작') || value.includes('디자인')) {
+    return 'border-amber-100 bg-amber-50 text-amber-700'
+  }
+
+  if (value.includes('수정') || value.includes('재접수')) {
+    return 'border-orange-100 bg-orange-50 text-orange-700'
+  }
+
+  return 'border-blue-100 bg-blue-50 text-blue-700'
 }
 
 export default function OrderDetailPage() {
@@ -275,7 +393,7 @@ export default function OrderDetailPage() {
     }
   }
 
-  const selectedTeethList = useMemo(() => {
+  const selectedTeethList = useMemo<string[]>(() => {
     if (!order?.selected_teeth) return []
 
     if (Array.isArray(order.selected_teeth)) {
@@ -283,39 +401,93 @@ export default function OrderDetailPage() {
     }
 
     return String(order.selected_teeth)
+      .replace(/[{}"]/g, '')
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean)
   }, [order])
 
+  const scanFiles = useMemo<{ path: string; name: string }[]>(() => {
+    const paths = String(order?.scan_file_paths || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+
+    const names = String(order?.scan_file_names || '')
+      .split(',')
+      .map((value) => value.trim())
+
+    return paths.map((path, index) => ({
+      path,
+      name: names[index] || `scan-file-${index + 1}.stl`,
+    }))
+  }, [order])
+
   const formatDateTime = (value?: string | null) => {
     if (!value) return '-'
+
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return '-'
+
     return date.toLocaleString('ko-KR')
   }
 
   const formatDate = (value?: string | null) => {
     if (!value) return '-'
+
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return '-'
+
     return date.toLocaleDateString('ko-KR')
   }
 
+  const gender = normalizeGender(order?.patient_gender)
+  const age = getAgeFromBirth(order?.patient_birth)
+  const patientMeta = [gender, age].filter(Boolean).join(' / ')
+
+  const historySteps = [
+    {
+      label: '주문 접수',
+      time: formatDateTime(order?.created_at),
+      active: true,
+      done: true,
+    },
+    {
+      label: '접수 완료',
+      time: order?.accepted_at ? formatDateTime(order.accepted_at) : '대기 중',
+      active: false,
+      done: Boolean(order?.accepted_at),
+    },
+    {
+      label: '제작 중',
+      time: order?.production_started_at ? formatDateTime(order.production_started_at) : '대기 중',
+      active: false,
+      done: Boolean(order?.production_started_at),
+    },
+    {
+      label: '제작 완료',
+      time: order?.completed_at ? formatDateTime(order.completed_at) : '대기 중',
+      active: false,
+      done: Boolean(order?.completed_at),
+    },
+  ]
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center font-bold text-slate-400">
-        로딩 중...
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
+        <div className="rounded-2xl border border-slate-200 bg-white px-8 py-5 text-[15px] font-extrabold text-slate-500 shadow-sm">
+          로딩 중...
+        </div>
+      </main>
     )
   }
 
   if (error) {
     return (
-      <main className="min-h-screen bg-[#f8fafc] px-6 py-10">
-        <div className="mx-auto w-full max-w-[1440px]">
-          <AppTopNav current="orders" />
-          <div className="rounded-[24px] border border-red-100 bg-red-50 p-8 text-center font-bold text-red-600">
+      <main className="min-h-screen bg-[#f8fafc]">
+        <AppTopNav current="orders" />
+        <div className="mx-auto w-full max-w-[1480px] px-6 pb-12">
+          <div className="rounded-[26px] border border-red-100 bg-red-50 p-8 text-center font-bold text-red-600">
             {error}
           </div>
         </div>
@@ -325,10 +497,10 @@ export default function OrderDetailPage() {
 
   if (!order) {
     return (
-      <main className="min-h-screen bg-[#f8fafc] px-6 py-10">
-        <div className="mx-auto w-full max-w-[1440px]">
-          <AppTopNav current="orders" />
-          <div className="rounded-[24px] border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">
+      <main className="min-h-screen bg-[#f8fafc]">
+        <AppTopNav current="orders" />
+        <div className="mx-auto w-full max-w-[1480px] px-6 pb-12">
+          <div className="rounded-[26px] border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">
             주문을 찾을 수 없습니다.
           </div>
         </div>
@@ -337,101 +509,136 @@ export default function OrderDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] px-6 py-10">
-      <div className="mx-auto w-full max-w-[1440px]">
-        <AppTopNav current="orders" />
+    <main className="min-h-screen bg-[#f8fafc]">
+      <AppTopNav current="orders" />
 
-        <div className="mb-8 flex flex-col gap-2 rounded-[32px] border border-[#e2e8f0] bg-white p-10 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="text-[14px] font-black uppercase text-blue-600/50">
-              Smilecad Platform
-            </span>
-            <div className="h-1 w-1 rounded-full bg-slate-300" />
-            <span className="text-[14px] font-bold text-slate-400">
-              Order Detail View
-            </span>
-          </div>
+      <div className="mx-auto w-full max-w-[1480px] px-6 pb-12">
+        <section className="mb-7 rounded-[30px] border border-slate-200 bg-white p-7 shadow-[0_14px_45px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-6">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-50 to-slate-100 text-blue-700">
+                <IconUser />
+              </div>
 
-          <div className="mt-2 flex items-center justify-between">
-            <div className="flex items-center gap-5">
-              <h1 className="text-[36px] font-black text-[#1e293b]">
-                {order.patient_name || '-'} 환자님
-              </h1>
-              <span
-                className={`rounded-full border px-5 py-1.5 text-[14px] font-black ${
-                  order.status === '접수 대기'
-                    ? 'border-blue-100 bg-blue-50 text-blue-600'
-                    : 'border-slate-100 bg-slate-50 text-slate-600'
-                }`}
-              >
-                {order.status || '접수 대기'}
-              </span>
-            </div>
-            <span className="text-[22px] font-bold text-slate-300">
-              #{order.order_number || order.id}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[400px_1fr]">
-          <div className="space-y-8">
-            <div className="rounded-[32px] border border-[#e2e8f0] bg-white p-10 shadow-sm">
-              <h3 className="mb-8 text-[18px] font-black text-[#1e293b]">
-                주문 히스토리
-              </h3>
-
-              <div className="relative space-y-10 pl-10 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-24px)] before:w-[2px] before:bg-slate-100">
-                <div className="relative">
-                  <div className="absolute -left-[39px] flex h-8 w-8 items-center justify-center rounded-full bg-green-500 text-[12px] text-white shadow-lg shadow-green-100 ring-8 ring-white">
-                    ✓
-                  </div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-[15px] font-black text-[#1e293b]">
-                      주문 접수됨
+              <div>
+                <p className="text-[13px] font-black text-blue-600">환자명</p>
+                <div className="mt-1 flex flex-wrap items-end gap-3">
+                  <h1 className="text-[36px] font-black leading-none tracking-[-0.04em] text-slate-950">
+                    {order.patient_name || '-'}
+                  </h1>
+                  {patientMeta && (
+                    <span className="mb-1 text-[15px] font-bold text-slate-500">
+                      ({patientMeta})
                     </span>
-                    <span className="text-[12px] font-bold text-slate-400">
-                      {formatDateTime(order.created_at)}
-                    </span>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-100 bg-slate-50 p-5 text-[14px] font-medium text-slate-600">
-                    주문이 접수되었습니다.
-                  </div>
+                  )}
                 </div>
 
-                {order.history?.map((h: any, idx: number) => (
-                  <div key={idx} className="relative">
-                    <div className="absolute -left-[39px] flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-[12px] text-white shadow-lg ring-8 ring-white">
-                      ●
-                    </div>
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-[15px] font-black text-[#1e293b]">
-                        {h.status}
-                      </span>
-                      <span className="text-[12px] font-bold text-slate-400">
-                        {formatDateTime(h.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                <span
+                  className={`mt-4 inline-flex rounded-lg border px-3 py-1 text-[13px] font-black ${statusStyle(
+                    order.status
+                  )}`}
+                >
+                  {order.status || '접수 대기'}
+                </span>
               </div>
             </div>
 
+            <div className="hidden h-24 w-px bg-slate-200 lg:block" />
+
+            <div className="min-w-0 lg:min-w-[370px]">
+              <p className="text-[13px] font-bold text-slate-500">주문번호</p>
+              <div className="mt-2 flex items-center gap-3">
+                <p className="truncate text-[24px] font-black tracking-[-0.02em] text-slate-950">
+                  {order.order_number || `ORD-${order.id}`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigator.clipboard?.writeText(order.order_number || `ORD-${order.id}`)
+                  }
+                  className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  title="주문번호 복사"
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+                    <path
+                      d="M9 9H19V19H9V9Z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M5 15H4V5H14V6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <p className="mt-5 text-[14px] font-bold text-slate-500">
+                주문 생성일{' '}
+                <span className="ml-2 text-slate-700">{formatDateTime(order.created_at)}</span>
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-7 grid grid-cols-1 gap-7 lg:grid-cols-[360px_1fr]">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-8 flex items-center gap-3">
+              <div className="text-blue-600">
+                <IconClock />
+              </div>
+              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                주문 이력
+              </h2>
+            </div>
+
+            <div className="relative space-y-8 pl-10 before:absolute before:left-[10px] before:top-3 before:h-[calc(100%-30px)] before:w-[2px] before:bg-slate-200">
+              {historySteps.map((step, index) => (
+                <div key={step.label} className="relative">
+                  <div
+                    className={`absolute -left-[39px] top-1 h-5 w-5 rounded-full border-[3px] ring-4 ring-white ${
+                      step.active
+                        ? 'border-emerald-500 bg-emerald-500 shadow-lg shadow-emerald-100'
+                        : step.done
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-slate-300 bg-white'
+                    }`}
+                  />
+
+                  <p
+                    className={`text-[16px] font-black ${
+                      step.active ? 'text-emerald-700' : 'text-slate-800'
+                    }`}
+                  >
+                    {step.label}
+                  </p>
+                  <p className="mt-1 text-[14px] font-semibold text-slate-500">{step.time}</p>
+
+                  {index === 0 && (
+                    <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-[13px] font-semibold text-slate-500">
+                      주문이 접수되었습니다.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
             {userRole === 'admin' && (
-              <div className="rounded-[32px] border-2 border-blue-100 bg-white p-10 shadow-lg shadow-blue-50">
-                <h3 className="mb-6 text-[18px] font-black text-[#1e293b]">
-                  관리자 전용 액션
-                </h3>
-                <div className="flex flex-col gap-3">
+              <div className="mt-9 border-t border-slate-100 pt-6">
+                <h3 className="mb-4 text-[15px] font-black text-slate-800">관리자 상태 변경</h3>
+                <div className="grid grid-cols-1 gap-2">
                   {['접수 대기', '디자인 작업중', '수정 요청 중', '주문 재접수'].map((s) => (
                     <button
                       key={s}
                       disabled={updating || order.status === s}
                       onClick={() => handleStatusUpdate(s)}
-                      className={`rounded-2xl py-4 text-[15px] font-black transition-all ${
+                      className={`rounded-2xl px-4 py-3 text-[14px] font-black transition-all ${
                         order.status === s
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                      }`}
+                          ? 'bg-slate-900 text-white shadow-md'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
                       {s}
                     </button>
@@ -441,137 +648,222 @@ export default function OrderDetailPage() {
             )}
           </div>
 
-          <div className="space-y-8">
-            <div className="rounded-[32px] border border-[#e2e8f0] bg-white p-10 shadow-sm">
-              <h3 className="mb-10 text-[20px] font-black text-[#1e293b]">
-                상세 주문 데이터
-              </h3>
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-7 flex items-center gap-3">
+              <div className="text-blue-600">
+                <IconDocument />
+              </div>
+              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                주문 상세 정보
+              </h2>
+            </div>
 
-              <div className="grid grid-cols-2 gap-x-20 gap-y-6 text-[14px]">
+            <div className="border-t border-slate-200">
+              <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-4 md:divide-x md:divide-y-0">
                 {[
-                  { label: '환자 성함', value: order.patient_name },
+                  { label: '환자명', value: order.patient_name },
                   { label: '희망 완료일', value: formatDate(order.delivery_date) },
-                  { label: '주문 생성일', value: formatDateTime(order.created_at) },
                   { label: '치과명', value: order.clinic_name },
-                  { label: '지그 제작', value: order.jig_required, highlight: true },
-                  { label: '와이어 두께', value: order.thickness, highlight: true },
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between border-b border-slate-50 pb-5"
-                  >
-                    <span
-                      className={`font-bold ${
-                        item.highlight ? 'text-blue-500' : 'text-slate-400'
-                      }`}
-                    >
-                      {item.label}
-                    </span>
-
-                    {item.highlight ? (
-                      <span className="rounded-[8px] border border-blue-100 bg-blue-50 px-3 py-1.5 text-[14px] font-black text-blue-600 shadow-sm">
-                        {item.value || '-'}
-                      </span>
-                    ) : (
-                      <span className="font-black text-slate-700">{item.value || '-'}</span>
-                    )}
+                  { label: '주문 생성일', value: formatDateTime(order.created_at) },
+                ].map((item) => (
+                  <div key={item.label} className="px-0 py-5 md:px-7">
+                    <p className="text-[13px] font-bold text-slate-500">{item.label}</p>
+                    <p className="mt-3 text-[16px] font-black text-slate-950">
+                      {item.value || '-'}
+                    </p>
                   </div>
                 ))}
               </div>
-            </div>
 
-            <div className="rounded-[32px] border border-[#e2e8f0] bg-white p-10 shadow-sm">
-              <div className="mb-10 flex items-center justify-between">
-                <h3 className="text-[20px] font-black text-[#1e293b]">치식 정보</h3>
-                <span className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-1.5 text-[13px] font-black text-blue-600">
-                  {order.product_type || '-'}
-                </span>
+              <div className="border-t border-slate-100 py-5">
+                <p className="text-[13px] font-bold text-slate-500">치과 주소</p>
+                <p className="mt-3 text-[16px] font-black leading-relaxed text-slate-950">
+                  {order.clinic_address || '-'}
+                </p>
               </div>
 
-              <div className="flex flex-col items-center gap-8 rounded-[24px] border border-slate-100 bg-[#f8fafc]/50 py-12">
-                <div className="flex gap-4">
-                  {PERMANENT_TOP.map((n) => (
-                    <ToothIcon
-                      key={n}
-                      selected={selectedTeethList.includes(String(n))}
-                      flipped
-                    />
-                  ))}
+              <div className="grid grid-cols-1 border-t border-slate-100 md:grid-cols-3 md:divide-x md:divide-slate-100">
+                <div className="px-0 py-5 md:px-7">
+                  <p className="text-[13px] font-bold text-slate-500">지그 제작</p>
+                  <span className="mt-3 inline-flex rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-1.5 text-[14px] font-black text-emerald-700">
+                    {order.jig_required || '-'}
+                  </span>
                 </div>
 
-                <div className="h-[2px] w-[90%] bg-slate-200" />
-
-                <div className="flex gap-4">
-                  {PERMANENT_BOTTOM.map((n) => (
-                    <ToothIcon key={n} selected={selectedTeethList.includes(String(n))} />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="rounded-[32px] border border-[#e2e8f0] bg-white p-8 shadow-sm">
-                <h3 className="mb-5 text-[16px] font-extrabold text-[#1f2937]">
-                  요청사항
-                </h3>
-                <div className="min-h-[120px] rounded-2xl bg-[#f8fafc] p-6 text-[14px] text-[#64748b]">
-                  {order.request_note || '없음'}
-                </div>
-              </div>
-
-              <div className="flex flex-col rounded-[32px] border border-[#e2e8f0] bg-white p-8 shadow-sm">
-                <div className="mb-5 flex items-center justify-between">
-                  <h3 className="text-[16px] font-extrabold text-[#1f2937]">
-                    스캔 파일
-                  </h3>
-
-                  {order.scan_file_paths && (
-                    <button
-                      onClick={handleDownloadAll}
-                      disabled={downloading}
-                      className="rounded-lg bg-blue-50 px-4 py-1.5 text-[12px] font-extrabold text-blue-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {downloading ? '다운로드 중...' : '전체 다운로드 ↓'}
-                    </button>
-                  )}
+                <div className="px-0 py-5 md:px-7">
+                  <p className="text-[13px] font-bold text-slate-500">와이어 두께</p>
+                  <span className="mt-3 inline-flex rounded-lg border border-blue-100 bg-blue-50 px-4 py-1.5 text-[14px] font-black text-blue-700">
+                    {order.thickness || '-'}
+                  </span>
                 </div>
 
-                <div className="flex flex-1 flex-col justify-center gap-3">
-                  {order.scan_file_paths ? (
-                    String(order.scan_file_paths)
-                      .split(',')
-                      .map((p: string, i: number) => {
-                        const fileName =
-                          String(order.scan_file_names || '')
-                            .split(',')
-                            [i]?.trim() || `scan-file-${i + 1}.stl`
-
-                        return (
-                          <div
-                            key={`${p}-${i}`}
-                            className="flex w-full items-center justify-between rounded-xl border border-[#eef2f6] bg-[#f8fafc] p-4 transition hover:border-blue-300"
-                          >
-                            <span className="truncate pr-4 text-[13px] font-bold text-[#1f2937]">
-                              {fileName}
-                            </span>
-                            <button
-                              onClick={() => handleDownload(p.trim(), fileName)}
-                              disabled={downloading}
-                              className="shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-blue-500 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              다운로드
-                            </button>
-                          </div>
-                        )
-                      })
-                  ) : (
-                    <p className="text-center text-[13px] text-slate-400">파일 없음</p>
-                  )}
+                <div className="px-0 py-5 md:px-7">
+                  <p className="text-[13px] font-bold text-slate-500">특이사항</p>
+                  <p className="mt-3 text-[16px] font-black text-slate-950">
+                    {order.request_note || '-'}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </section>
+
+        <section className="mb-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
+            <div className="border-b border-slate-100 pb-7 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
+              <div className="mb-7 flex items-center gap-3">
+                <div className="text-blue-600">
+                  <IconTooth />
+                </div>
+                <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                  치식 정보
+                </h2>
+              </div>
+
+              <div>
+                <p className="text-[14px] font-bold text-slate-500">선택 치식</p>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {selectedTeethList.length > 0 ? (
+                    selectedTeethList.map((tooth: string) => (
+                      <span
+                        key={tooth}
+                        className="rounded-xl bg-blue-50 px-4 py-2 text-[15px] font-black text-blue-700"
+                      >
+                        {tooth}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="rounded-xl bg-slate-100 px-4 py-2 text-[14px] font-bold text-slate-500">
+                      없음
+                    </span>
+                  )}
+
+                  <span className="text-[14px] font-black text-slate-700">
+                    / 총 {selectedTeethList.length}개
+                  </span>
+                </div>
+
+                <div className="mt-8 space-y-3">
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-slate-600">
+                    <span className="h-3 w-3 rounded-full bg-blue-600" />
+                    선택된 치아
+                  </div>
+                  <div className="flex items-center gap-2 text-[13px] font-bold text-slate-500">
+                    <span className="h-3 w-3 rounded-full bg-slate-300" />
+                    선택되지 않은 치아
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto pb-2">
+              <div className="min-w-[900px]">
+                <div className="grid grid-cols-[70px_1fr] items-center gap-4">
+                  <p className="text-[16px] font-black text-slate-500">상악</p>
+                  <div className="grid grid-cols-16 gap-4">
+                    {PERMANENT_TOP.map((n) => (
+                      <div key={n} className="flex flex-col items-center gap-2">
+                        <ToothIcon selected={selectedTeethList.includes(String(n))} flipped />
+                        <span
+                          className={`text-[13px] font-black ${
+                            selectedTeethList.includes(String(n))
+                              ? 'text-blue-700'
+                              : 'text-slate-600'
+                          }`}
+                        >
+                          {n}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="my-6 h-px w-full bg-slate-200" />
+
+                <div className="grid grid-cols-[70px_1fr] items-center gap-4">
+                  <p className="text-[16px] font-black text-slate-500">하악</p>
+                  <div className="grid grid-cols-16 gap-4">
+                    {PERMANENT_BOTTOM.map((n) => (
+                      <div key={n} className="flex flex-col items-center gap-2">
+                        <ToothIcon selected={selectedTeethList.includes(String(n))} />
+                        <span
+                          className={`text-[13px] font-black ${
+                            selectedTeethList.includes(String(n))
+                              ? 'text-blue-700'
+                              : 'text-slate-600'
+                          }`}
+                        >
+                          {n}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-7 lg:grid-cols-2">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <h2 className="mb-6 text-[22px] font-black tracking-[-0.03em] text-slate-950">
+              요청사항
+            </h2>
+            <div className="min-h-[120px] rounded-2xl border border-slate-100 bg-slate-50 p-6 text-[15px] font-semibold leading-relaxed text-slate-600">
+              {order.request_note || '없음'}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                스캔 파일
+              </h2>
+
+              {scanFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadAll}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-black text-white shadow-lg shadow-blue-100 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {downloading ? '다운로드 중...' : '전체 다운로드'}
+                  <IconDownload />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {scanFiles.length > 0 ? (
+                scanFiles.map((file) => (
+                  <div
+                    key={file.path}
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-blue-200 hover:bg-blue-50/30"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-black text-slate-900">{file.name}</p>
+                      <p className="mt-1 text-[12px] font-bold text-slate-400">STL Scan File</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(file.path, file.name)}
+                      disabled={downloading}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-black text-blue-600 transition hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      다운로드
+                      <IconDownload />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center text-[14px] font-bold text-slate-400">
+                  파일 없음
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   )
