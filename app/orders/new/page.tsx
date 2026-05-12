@@ -82,6 +82,7 @@ function addBusinessDaysInclusive(startDate: Date, businessDays: number, holiday
       counted += 1
       if (counted >= businessDays) return new Date(current)
     }
+
     current.setDate(current.getDate() + 1)
   }
 }
@@ -121,7 +122,7 @@ function parseNcpResponse(raw: any) {
     if (
       parsed &&
       typeof parsed === 'object' &&
-      ('success' in parsed || 'orderId' in parsed || 'error' in parsed)
+      ('success' in parsed || 'orderId' in parsed || 'error' in parsed || 'uploadUrl' in parsed || 'url' in parsed)
     ) {
       return parsed
     }
@@ -556,6 +557,7 @@ export default function NewOrderPage() {
     if (minimumDeliveryDate) {
       const minDate = new Date(`${minimumDeliveryDate}T00:00:00`)
       minDate.setHours(0, 0, 0, 0)
+
       if (selected < minDate) {
         return `희망 완료일은 ${minimumDeliveryDate} 이후부터 선택할 수 있습니다.`
       }
@@ -699,11 +701,65 @@ export default function NewOrderPage() {
         process.env.NEXT_PUBLIC_NCP_GET_UPLOAD_URL_API_URL ||
         'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-upload-url'
 
-      const updateFilesApiUrl =
-        process.env.NEXT_PUBLIC_NCP_UPDATE_ORDER_FILES_API_URL ||
-        'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/update-order-files'
+      const uploadBatchId = crypto.randomUUID()
+      const scanFileNames: string[] = []
+      const scanFilePaths: string[] = []
 
-      const clientOrderId = crypto.randomUUID()
+      if (files.length > 0) {
+        for (const file of files) {
+          const uniqueFileName = `order_${uploadBatchId}_${Date.now()}_${file.name}`
+
+          const keyResponse = await fetch(getUploadUrlApiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({
+              fileName: uniqueFileName,
+              filename: uniqueFileName,
+              name: uniqueFileName,
+              contentType: file.type || 'application/octet-stream',
+              fileType: file.type || 'application/octet-stream',
+            }),
+          })
+
+          const keyRaw = await keyResponse.json().catch(() => ({}))
+          const uploadInfo = parseNcpResponse(keyRaw)
+
+          const uploadUrl =
+            uploadInfo?.uploadUrl ||
+            uploadInfo?.presignedUrl ||
+            uploadInfo?.signedUrl ||
+            uploadInfo?.url
+
+          const filePath =
+            uploadInfo?.filePath ||
+            uploadInfo?.objectKey ||
+            uploadInfo?.key ||
+            uploadInfo?.path ||
+            uniqueFileName
+
+          if (!keyResponse.ok || !uploadInfo?.success || !uploadUrl || !filePath) {
+            console.error('get-upload-url 응답 오류:', keyRaw, uploadInfo)
+            throw new Error(`파일 업로드 준비 실패: ${file.name}`)
+          }
+
+          const uploadResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+          })
+
+          if (!uploadResponse.ok) {
+            const uploadErrorText = await uploadResponse.text().catch(() => '')
+            console.error('Object Storage 업로드 실패:', uploadResponse.status, uploadErrorText)
+            throw new Error(`파일 전송 실패: ${file.name}`)
+          }
+
+          scanFileNames.push(file.name)
+          scanFilePaths.push(filePath)
+        }
+      }
 
       const createOrderRes = await fetch(createOrderApiUrl, {
         method: 'POST',
@@ -726,106 +782,17 @@ export default function NewOrderPage() {
           requestNote: requestNote?.trim() || null,
           isRemake,
           isAgreed,
-          orderId: clientOrderId,
+          scanFileNames,
+          scanFilePaths,
         }),
       })
 
       const createOrderRaw = await createOrderRes.json().catch(() => ({}))
       const createOrderData = parseNcpResponse(createOrderRaw)
 
-      if (!createOrderRes.ok || !createOrderData?.success) {
+      if (!createOrderRes.ok || createOrderData?.success === false) {
         console.error('create-order 응답 오류:', createOrderRaw, createOrderData)
         throw new Error(createOrderData?.error || '주문 저장에 실패했습니다.')
-      }
-
-      const orderId =
-        createOrderData.orderId ||
-        createOrderData.id ||
-        createOrderData.order_id ||
-        clientOrderId
-
-      if (!orderId) {
-        throw new Error('주문 저장에 실패했습니다.')
-      }
-
-      if (files.length > 0) {
-        const scanFileNames: string[] = []
-        const scanFilePaths: string[] = []
-
-        for (const file of files) {
-          const uniqueFileName = `order_${orderId}_${Date.now()}_${file.name}`
-
-          const keyResponse = await fetch(getUploadUrlApiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({
-              fileName: uniqueFileName,
-              filename: uniqueFileName,
-              name: uniqueFileName,
-              contentType: file.type || 'application/octet-stream',
-              fileType: file.type || 'application/octet-stream',
-            }),
-          })
-
-          const keyRaw = await keyResponse.json().catch(() => ({}))
-          const uploadInfo = parseNcpResponse(keyRaw)
-
-          const uploadUrl =
-            uploadInfo.uploadUrl ||
-            uploadInfo.presignedUrl ||
-            uploadInfo.signedUrl ||
-            uploadInfo.url
-
-          const filePath =
-            uploadInfo.filePath ||
-            uploadInfo.objectKey ||
-            uploadInfo.key ||
-            uploadInfo.path ||
-            uniqueFileName
-
-          if (!keyResponse.ok || !uploadInfo?.success || !uploadUrl || !filePath) {
-            console.error('get-upload-url 응답 오류:', keyRaw, uploadInfo)
-            throw new Error(`파일 업로드 준비 실패: ${file.name}`)
-          }
-
-          const uploadResponse = await fetch(uploadUrl, {
-            method: 'PUT',
-            body: file,
-          })
-
-          if (!uploadResponse.ok) {
-            const uploadErrorText = await uploadResponse.text().catch(() => '')
-            console.error('Object Storage 업로드 실패:', uploadResponse.status, uploadErrorText)
-            throw new Error(`파일 전송 실패: ${file.name}`)
-          }
-
-          scanFileNames.push(file.name)
-          scanFilePaths.push(filePath)
-        }
-
-        const updateFilesRes = await fetch(updateFilesApiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({
-            orderId,
-            scanFileNames,
-            scanFilePaths,
-          }),
-        })
-
-        const updateFilesRaw = await updateFilesRes.json().catch(() => ({}))
-        const updateFilesData = parseNcpResponse(updateFilesRaw)
-
-        if (!updateFilesRes.ok || updateFilesData?.success === false) {
-          console.error('update-order-files 응답 오류:', updateFilesRaw, updateFilesData)
-          throw new Error(updateFilesData?.error || '파일 경로 저장에 실패했습니다.')
-        }
       }
 
       alert('주문과 파일 업로드가 성공적으로 완료되었습니다!')
