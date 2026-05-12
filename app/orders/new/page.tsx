@@ -637,7 +637,9 @@ export default function NewOrderPage() {
       return
     }
 
-    if (!authToken || !authUser?.email) {
+    const loginEmail = authUser?.email || authUser?.loginId || ''
+
+    if (!authToken || !loginEmail) {
       setError('로그인 정보가 없습니다. 다시 로그인해주세요.')
       router.replace('/login')
       return
@@ -771,7 +773,9 @@ export default function NewOrderPage() {
           Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          email: authUser.email,
+          authToken,
+          token: authToken,
+          email: loginEmail,
           clinicName: clinicName.trim(),
           clinicAddress: clinicAddress.trim(),
           patientName: patientName.trim(),
@@ -796,6 +800,13 @@ export default function NewOrderPage() {
       if (!createOrderRes.ok || createOrderData?.success === false) {
         console.error('create-order 응답 오류:', createOrderRaw, createOrderData)
         throw new Error(createOrderData?.error || '주문 저장에 실패했습니다.')
+      }
+
+      // NCP API Gateway가 Cloud Function을 비동기로 호출하는 경우
+      // 응답이 { activationId: '...' } 형태로만 올 수 있습니다.
+      // 이 경우 실제 DB 저장은 백그라운드에서 진행되므로 잠깐 기다린 뒤 목록으로 이동합니다.
+      if (createOrderData?.activationId && !createOrderData?.success) {
+        await new Promise((resolve) => setTimeout(resolve, 1200))
       }
 
       alert('주문과 파일 업로드가 성공적으로 완료되었습니다!')
