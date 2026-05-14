@@ -490,32 +490,88 @@ export default function OrderDetailPage() {
   const age = getAgeFromBirth(order?.patient_birth)
   const patientMeta = [gender, age].filter(Boolean).join(' / ')
 
-  const historySteps = [
-    {
+  const historySteps = useMemo(() => {
+    const rawHistory = Array.isArray(order?.history)
+      ? order.history
+      : Array.isArray(order?.status_history)
+        ? order.status_history
+        : []
+
+    const baseStep = {
       label: '주문 접수',
       time: formatDateTime(order?.created_at),
-      active: true,
+      active: rawHistory.length === 0,
       done: true,
-    },
-    {
-      label: '접수 완료',
-      time: order?.accepted_at ? formatDateTime(order.accepted_at) : '대기 중',
-      active: false,
-      done: Boolean(order?.accepted_at),
-    },
-    {
-      label: '제작 중',
-      time: order?.production_started_at ? formatDateTime(order.production_started_at) : '대기 중',
-      active: false,
-      done: Boolean(order?.production_started_at),
-    },
-    {
-      label: '제작 완료',
-      time: order?.completed_at ? formatDateTime(order.completed_at) : '대기 중',
-      active: false,
-      done: Boolean(order?.completed_at),
-    },
-  ]
+      memo: '주문이 접수되었습니다.',
+      changedBy: '',
+    }
+
+    const normalizedHistory = rawHistory
+      .map((item: any) => {
+        const status = item.new_status || item.status || item.order_status || ''
+        const time = item.changed_at || item.created_at || item.updated_at || ''
+        const previousStatus = item.old_status || ''
+        const changedBy = item.changed_by || ''
+
+        return {
+          label: String(status || '').trim(),
+          time: formatDateTime(time),
+          active: String(status || '').trim() === String(order?.status || '').trim(),
+          done: true,
+          memo: previousStatus ? `${previousStatus} → ${status}` : '',
+          changedBy,
+        }
+      })
+      .filter((item: any) => item.label)
+
+    if (normalizedHistory.length === 0) {
+      const currentStatus = order?.status || '접수 대기'
+
+      if (currentStatus && currentStatus !== '접수 대기') {
+        return [
+          baseStep,
+          {
+            label: currentStatus,
+            time: formatDateTime(order?.updated_at || order?.created_at),
+            active: true,
+            done: true,
+            memo: '현재 주문 상태입니다.',
+            changedBy: '',
+          },
+        ]
+      }
+
+      return [
+        baseStep,
+        {
+          label: '접수 대기',
+          time: '대기 중',
+          active: false,
+          done: false,
+          memo: '',
+          changedBy: '',
+        },
+        {
+          label: '디자인 작업중',
+          time: '대기 중',
+          active: false,
+          done: false,
+          memo: '',
+          changedBy: '',
+        },
+        {
+          label: '제작 완료',
+          time: '대기 중',
+          active: false,
+          done: false,
+          memo: '',
+          changedBy: '',
+        },
+      ]
+    }
+
+    return [baseStep, ...normalizedHistory]
+  }, [order])
 
   if (loading) {
     return (
@@ -640,8 +696,8 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="relative space-y-8 pl-10 before:absolute before:left-[10px] before:top-3 before:h-[calc(100%-30px)] before:w-[2px] before:bg-slate-200">
-              {historySteps.map((step, index) => (
-                <div key={step.label} className="relative">
+              {historySteps.map((step) => (
+                <div key={`${step.label}-${step.time}`} className="relative">
                   <div
                     className={`absolute -left-[39px] top-1 h-5 w-5 rounded-full border-[3px] ring-4 ring-white ${
                       step.active
@@ -661,9 +717,15 @@ export default function OrderDetailPage() {
                   </p>
                   <p className="mt-1 text-[14px] font-semibold text-slate-500">{step.time}</p>
 
-                  {index === 0 && (
+                  {step.memo && (
                     <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-[13px] font-semibold text-slate-500">
-                      주문이 접수되었습니다.
+                      {step.memo}
+                    </p>
+                  )}
+
+                  {step.changedBy && (
+                    <p className="mt-2 text-[12px] font-bold text-slate-400">
+                      처리자: {step.changedBy}
                     </p>
                   )}
                 </div>
