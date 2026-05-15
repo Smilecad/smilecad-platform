@@ -1,7 +1,7 @@
 // app/orders/page.tsx
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppTopNav from '@/app/components/AppTopNav'
 
@@ -38,6 +38,88 @@ const LIST_ORDERS_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_ORDERS_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-orders'
 
+const DEFAULT_LIST_ERROR =
+  '주문 목록을 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+function isTechnicalErrorMessage(message: string) {
+  const value = message.toLowerCase()
+
+  const technicalKeywords = [
+    'failed to fetch',
+    'networkerror',
+    'cors',
+    'access-control',
+    'column',
+    'relation',
+    'constraint',
+    'violates',
+    'not-null',
+    'null value',
+    'syntax error',
+    'jwt_secret',
+    'object storage',
+    'access key',
+    'secret key',
+    '환경변수',
+    'statuscode',
+    '상태코드',
+    'internal server error',
+    'bad gateway',
+    'gateway',
+    'unexpected token',
+    'json',
+    'database',
+    'db_',
+    'postgres',
+    'sql',
+    'api gateway',
+    '토큰 서명',
+  ]
+
+  return technicalKeywords.some((keyword) => value.includes(keyword))
+}
+
+function toSafeUserMessage(error: unknown, fallback = DEFAULT_LIST_ERROR) {
+  const message = error instanceof Error ? error.message : String(error || '')
+
+  if (!message) return fallback
+
+  const safeMessages = [
+    '인증 토큰이 필요합니다.',
+    '토큰이 만료되었습니다.',
+    '로그인 정보가 없습니다. 다시 로그인해주세요.',
+    '주문을 찾을 수 없거나 접근 권한이 없습니다.',
+  ]
+
+  if (safeMessages.some((safeMessage) => message.includes(safeMessage))) {
+    return message
+  }
+
+  if (isTechnicalErrorMessage(message)) {
+    return fallback
+  }
+
+  return fallback
+}
+
+function statusBadgeClass(status?: string | null) {
+  const value = status || '접수 대기'
+
+  if (value.includes('디자인') || value.includes('작업')) {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
+  }
+
+  if (value.includes('수정') || value.includes('재접수')) {
+    return 'border-orange-200 bg-orange-50 text-orange-700'
+  }
+
+  if (value.includes('완료')) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+
+  return 'border-blue-200 bg-blue-50 text-blue-700'
+}
+
 export default function OrdersPage() {
   const router = useRouter()
 
@@ -50,7 +132,7 @@ export default function OrdersPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  useEffect(() => {
+  const fetchOrders = useCallback(async () => {
     const token = window.localStorage.getItem('smilecad_token')
     const userRaw = window.localStorage.getItem('smilecad_user')
 
@@ -63,56 +145,66 @@ export default function OrdersPage() {
 
     try {
       storedUser = userRaw ? JSON.parse(userRaw) : null
-    } catch {
+    } catch (parseError) {
+      console.error('저장된 사용자 정보 파싱 실패:', parseError)
       storedUser = null
     }
 
     setCurrentUser(storedUser)
 
-    async function fetchOrders() {
-      try {
-        setLoading(true)
-        setError('')
+    try {
+      setLoading(true)
+      setError('')
 
-        const res = await fetch(LIST_ORDERS_API_URL, {
-          method: 'GET',
-          cache: 'no-store',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      const res = await fetch(LIST_ORDERS_API_URL, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      const text = await res.text()
+      let data: any = null
+
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch (parseError) {
+        console.error('list-orders JSON 파싱 실패:', {
+          status: res.status,
+          text,
+          error: parseError,
         })
 
-        const text = await res.text()
-        let data: any = null
-
-        try {
-          data = text ? JSON.parse(text) : null
-        } catch {
-          throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
-        }
-
-        if (res.status === 401 || res.status === 403) {
-          window.localStorage.removeItem('smilecad_token')
-          window.localStorage.removeItem('smilecad_user')
-          router.replace('/login?force=1')
-          return
-        }
-
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.error || '주문 목록 로드 실패')
-        }
-
-        setOrders(data.orders || [])
-        setUserRole(data.role || storedUser?.role || 'clinic')
-      } catch (err: any) {
-        setError(err.message || '주문 목록 로드 실패')
-      } finally {
-        setLoading(false)
+        throw new Error('API 응답을 처리할 수 없습니다.')
       }
-    }
 
-    fetchOrders()
+      if (res.status === 401 || res.status === 403) {
+        window.localStorage.removeItem('smilecad_token')
+        window.localStorage.removeItem('smilecad_user')
+        router.replace('/login?force=1')
+        return
+      }
+
+      if (!res.ok || !data?.success) {
+        console.error('list-orders 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_LIST_ERROR)
+      }
+
+      setOrders(data.orders || [])
+      setUserRole(data.role || storedUser?.role || 'clinic')
+    } catch (err) {
+      console.error('주문 목록 조회 실패:', err)
+      setOrders([])
+      setError(toSafeUserMessage(err, DEFAULT_LIST_ERROR))
+    } finally {
+      setLoading(false)
+    }
   }, [router])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [fetchOrders])
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -157,36 +249,38 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-lg font-bold text-slate-500">
-        데이터를 불러오는 중입니다...
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] px-4">
+        <div className="rounded-2xl border border-slate-200 bg-white px-7 py-5 text-[15px] font-bold text-slate-500 shadow-sm">
+          데이터를 불러오는 중입니다...
+        </div>
+      </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
+    <main className="min-h-screen bg-[#f3f5f9] px-4 py-6 sm:px-6 sm:py-10">
       <div className="mx-auto w-full max-w-[1480px]">
         <AppTopNav current="orders" />
 
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-4">
-              <div className="text-[30px] font-extrabold tracking-tight text-[#1f2937]">
-                {userRole === 'admin' ? '전체 주문 관리 (관리자)' : '주문 목록'}
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="text-[28px] font-extrabold leading-tight tracking-tight text-[#1f2937] sm:text-[30px]">
+                {userRole === 'admin' ? '전체 주문 관리' : '주문 목록'}
               </div>
 
-              <div className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2 shadow-lg shadow-blue-100">
-                <span className="text-[13px] font-bold uppercase tracking-wider text-blue-100">
+              <div className="flex w-fit items-center gap-2 rounded-full bg-blue-600 px-5 py-2 shadow-lg shadow-blue-100">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-blue-100">
                   Total
                 </span>
-                <span className="text-[22px] font-black text-white">
+                <span className="text-[20px] font-black text-white">
                   {filteredOrders.length}
                 </span>
-                <span className="text-[13px] font-bold text-blue-100">건</span>
+                <span className="text-[12px] font-bold text-blue-100">건</span>
               </div>
             </div>
 
-            <div className="mt-2 text-[14px] text-[#98a2b3]">
+            <div className="mt-2 text-[13px] text-[#98a2b3] sm:text-[14px]">
               {userRole === 'admin'
                 ? '모든 치과의 주문 내역을 조회합니다.'
                 : `${currentUser?.email || currentUser?.loginId || ''}님의 주문 내역입니다.`}
@@ -194,20 +288,22 @@ export default function OrdersPage() {
           </div>
 
           <button
+            type="button"
             onClick={() => router.push('/orders/new')}
-            className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb]"
+            className="w-full rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] sm:w-auto"
           >
             + 새 주문하기
           </button>
         </div>
 
-        <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div className="flex flex-wrap gap-2">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {STATUS_TABS.map((status) => (
               <button
                 key={status}
+                type="button"
                 onClick={() => setSelectedStatus(status)}
-                className={`rounded-[12px] px-5 py-2.5 text-[14px] font-bold transition ${
+                className={`rounded-[12px] px-4 py-3 text-[13px] font-bold transition sm:px-5 sm:py-2.5 sm:text-[14px] ${
                   selectedStatus === status
                     ? 'bg-[#1f2937] text-white shadow-md'
                     : 'border border-[#e1e7ef] bg-white text-[#667085] hover:bg-[#f8fafc]'
@@ -218,39 +314,55 @@ export default function OrdersPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 rounded-[14px] border border-[#e1e7ef] bg-white p-2 shadow-sm">
-            <div className="px-3 text-[13px] font-bold text-[#667085]">접수일 조회</div>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-[8px] bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
-            />
-            <span className="text-[#98a2b3]">~</span>
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-[8px] bg-[#f8fafc] px-3 py-1.5 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff]"
-            />
-            <button
-              onClick={resetDateFilter}
-              className="rounded-[8px] bg-[#f1f5f9] px-4 py-1.5 text-[13px] font-bold text-[#64748b] transition hover:bg-[#e2e8f0]"
-            >
-              초기화
-            </button>
+          <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
+            <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
+              접수일 조회
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+              />
+
+              <span className="hidden text-[#98a2b3] sm:inline">~</span>
+
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+              />
+
+              <button
+                type="button"
+                onClick={resetDateFilter}
+                className="h-10 w-full rounded-[10px] bg-[#f1f5f9] px-4 text-[13px] font-bold text-[#64748b] transition hover:bg-[#e2e8f0] sm:w-auto"
+              >
+                초기화
+              </button>
+            </div>
           </div>
         </div>
 
         {error && (
-          <div className="mb-6 rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-600">
-            {error}
+          <div className="mb-6 rounded-[18px] border border-red-100 bg-red-50 p-5 text-sm font-semibold text-red-600">
+            <div>{error}</div>
+            <button
+              type="button"
+              onClick={fetchOrders}
+              className="mt-4 rounded-[12px] bg-red-600 px-5 py-2 text-[13px] font-bold text-white transition hover:bg-red-700"
+            >
+              다시 시도
+            </button>
           </div>
         )}
 
-        <div className="overflow-hidden rounded-[28px] border border-[#d9e0ea] bg-white p-8 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <div className="overflow-hidden rounded-[24px] border border-[#d9e0ea] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:rounded-[28px] sm:p-8">
           {filteredOrders.length === 0 ? (
-            <div className="py-20 text-center text-[15px] font-semibold text-[#98a2b3]">
+            <div className="flex min-h-[210px] items-center justify-center px-4 py-16 text-center text-[15px] font-semibold text-[#98a2b3]">
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
@@ -261,17 +373,43 @@ export default function OrdersPage() {
                 return (
                   <div
                     key={order.id}
-                    className="flex flex-col items-center justify-between gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] sm:flex-row"
+                    className="flex flex-col gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] lg:flex-row lg:items-center lg:justify-between"
                   >
-                    <div className="flex w-[60px] shrink-0 items-center justify-center text-[20px] font-black text-blue-600/30">
-                      {String(orderIndex).padStart(2, '0')}
+                    <div className="flex items-start gap-3 lg:w-[70px] lg:justify-center">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[15px] font-black text-blue-600">
+                        {String(orderIndex).padStart(2, '0')}
+                      </div>
+
+                      <div className="min-w-0 flex-1 lg:hidden">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex w-fit shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-bold ${statusBadgeClass(
+                              order.status
+                            )}`}
+                          >
+                            {order.status || '접수 대기'}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 text-[17px] font-black leading-tight text-[#1f2937]">
+                          {order.patient_name || '-'} 환자님
+                        </div>
+
+                        <div className="mt-1 text-[11px] font-bold text-[#98a2b3]">
+                          {order.order_number || `ORDER-${order.id}`}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex w-fit min-w-[72px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#bbf7d0] bg-[#f0fdf4] px-3 py-1.5 text-[11px] font-bold text-[#16a34a]">
+                    <div
+                      className={`hidden w-fit min-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-bold lg:flex ${statusBadgeClass(
+                        order.status
+                      )}`}
+                    >
                       {order.status || '접수 대기'}
                     </div>
 
-                    <div className="flex min-w-[160px] flex-1 flex-col">
+                    <div className="hidden min-w-[160px] flex-1 flex-col lg:flex">
                       <span className="text-[17px] font-black text-[#1f2937]">
                         {order.patient_name || '-'} 환자님
                       </span>
@@ -280,8 +418,8 @@ export default function OrdersPage() {
                       </span>
                     </div>
 
-                    <div className="flex flex-[2.5] items-center justify-between text-[13px] text-[#475467] sm:justify-around">
-                      <div className="flex flex-col items-center">
+                    <div className="grid grid-cols-2 gap-3 rounded-[16px] bg-[#f8fafc] p-3 text-[13px] text-[#475467] sm:grid-cols-3 lg:flex lg:flex-[2.5] lg:items-center lg:justify-around lg:bg-transparent lg:p-0">
+                      <div className="flex flex-col">
                         <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
                           제품 유형
                         </span>
@@ -290,7 +428,7 @@ export default function OrdersPage() {
                         </span>
                       </div>
 
-                      <div className="flex flex-col items-center">
+                      <div className="flex flex-col">
                         <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
                           희망 납기일
                         </span>
@@ -300,7 +438,7 @@ export default function OrdersPage() {
                       </div>
 
                       {userRole === 'admin' && (
-                        <div className="flex flex-col items-center">
+                        <div className="col-span-2 flex flex-col sm:col-span-1">
                           <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
                             치과명
                           </span>
@@ -311,13 +449,15 @@ export default function OrdersPage() {
                       )}
                     </div>
 
-                    <div className="flex w-full shrink-0 items-center justify-between sm:w-auto sm:flex-col sm:items-end sm:gap-2">
+                    <div className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-[#eef2f6] pt-3 lg:w-auto lg:flex-col lg:items-end lg:border-t-0 lg:pt-0">
                       <span className="text-[11px] font-bold text-[#98a2b3]">
                         접수일: {formatDate(order.created_at)}
                       </span>
+
                       <button
+                        type="button"
                         onClick={() => router.push(`/orders/${order.id}`)}
-                        className="rounded-[10px] border border-[#d6dde8] px-5 py-2 text-[13px] font-bold text-[#475467] transition hover:bg-[#f8fafc] hover:text-[#1f2937]"
+                        className="rounded-[10px] border border-[#d6dde8] bg-white px-5 py-2 text-[13px] font-bold text-[#475467] transition hover:bg-[#f8fafc] hover:text-[#1f2937]"
                       >
                         상세 보기
                       </button>
