@@ -1,6 +1,16 @@
 'use client'
 
-import { ChangeEvent, DragEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ChangeEvent,
+  DragEvent,
+  FormEvent,
+  PointerEvent,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import AppTopNav from '@/app/components/AppTopNav'
 
@@ -17,6 +27,15 @@ type StoredUser = {
   email?: string
   role?: string
   phone?: string | null
+}
+
+type PriceInfo = {
+  toothCount: number
+  productBasePrice: number
+  toothAdjustmentPrice: number
+  jigPrice: number
+  totalPrice: number
+  priceDescription: string
 }
 
 const PRODUCT_TYPES: ProductType[] = [
@@ -40,8 +59,23 @@ const PERMANENT_BOTTOM = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36
 const PRIMARY_TOP = [55, 54, 53, 52, 51, 61, 62, 63, 64, 65]
 const PRIMARY_BOTTOM = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
 
+const TOOTH_ROWS = [PERMANENT_TOP, PERMANENT_BOTTOM, PRIMARY_TOP, PRIMARY_BOTTOM]
+
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 const MAX_FILE_COUNT = 5
+
+const BASE_TOOTH_COUNT = 6
+const NT_TAINER_BASE_PRICE = 35000
+const NT_TAINER_TOOTH_UNIT_PRICE = 5000
+const JIG_PRICE = 5000
+
+const FIXED_PRODUCT_PRICES: Record<ProductType, number | null> = {
+  'NT-tainer': null,
+  'NT-spacer': 35000,
+  'NT-regainer': 35000,
+  'NT-lingual arch': 65000,
+  'NT-uprighter': 45000,
+}
 
 const DEFAULT_USER_ERROR =
   '요청 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
@@ -55,6 +89,10 @@ function toToothKey(value: number) {
 
 function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ')
+}
+
+function formatMoney(value: number) {
+  return `${value.toLocaleString('ko-KR')}원`
 }
 
 function toLocalDateString(date: Date) {
@@ -90,6 +128,69 @@ function addBusinessDaysInclusive(startDate: Date, businessDays: number, holiday
     }
 
     current.setDate(current.getDate() + 1)
+  }
+}
+
+function getToothRange(startTooth: string, endTooth: string) {
+  const startNumber = Number(startTooth)
+  const endNumber = Number(endTooth)
+
+  for (const row of TOOTH_ROWS) {
+    const startIndex = row.indexOf(startNumber)
+    const endIndex = row.indexOf(endNumber)
+
+    if (startIndex !== -1 && endIndex !== -1) {
+      const from = Math.min(startIndex, endIndex)
+      const to = Math.max(startIndex, endIndex)
+
+      return row.slice(from, to + 1).map(toToothKey)
+    }
+  }
+
+  return [startTooth, endTooth]
+}
+
+function calculatePrice(productType: ProductType | '', selectedTeeth: string[], jigRequired: string): PriceInfo {
+  const toothCount = selectedTeeth.length
+  const jigPrice = jigRequired === 'Yes' ? JIG_PRICE : 0
+
+  if (!productType) {
+    return {
+      toothCount,
+      productBasePrice: 0,
+      toothAdjustmentPrice: 0,
+      jigPrice,
+      totalPrice: jigPrice,
+      priceDescription: '제품 유형 선택 전',
+    }
+  }
+
+  if (productType === 'NT-tainer') {
+    const toothAdjustmentPrice = (toothCount - BASE_TOOTH_COUNT) * NT_TAINER_TOOTH_UNIT_PRICE
+    const productBasePrice = NT_TAINER_BASE_PRICE
+    const productPrice = Math.max(0, productBasePrice + toothAdjustmentPrice)
+
+    return {
+      toothCount,
+      productBasePrice,
+      toothAdjustmentPrice,
+      jigPrice,
+      totalPrice: productPrice + jigPrice,
+      priceDescription: `NT-tainer ${BASE_TOOTH_COUNT}개 기준 ${formatMoney(
+        NT_TAINER_BASE_PRICE
+      )}, 치아 1개당 ±${formatMoney(NT_TAINER_TOOTH_UNIT_PRICE)}`,
+    }
+  }
+
+  const productBasePrice = FIXED_PRODUCT_PRICES[productType] || 0
+
+  return {
+    toothCount,
+    productBasePrice,
+    toothAdjustmentPrice: 0,
+    jigPrice,
+    totalPrice: productBasePrice + jigPrice,
+    priceDescription: `${productType} 기본 단가 ${formatMoney(productBasePrice)}`,
   }
 }
 
@@ -210,10 +311,11 @@ function parseNcpResponse(raw: any) {
   return raw
 }
 
-function SectionTitle({ title }: { title: string }) {
+function SectionTitle({ title, description }: { title: string; description?: string }) {
   return (
-    <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 text-[16px] font-extrabold text-[#263142] sm:px-6 sm:text-[17px]">
-      {title}
+    <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 sm:px-6">
+      <div className="text-[16px] font-extrabold text-[#263142] sm:text-[17px]">{title}</div>
+      {description && <div className="mt-1 text-[12px] font-semibold text-[#98a2b3]">{description}</div>}
     </div>
   )
 }
@@ -257,27 +359,40 @@ function TextInput({
 
 function PermanentTooth({
   selected,
+  preview,
   onClick,
+  onPointerDown,
+  onPointerEnter,
+  onPointerUp,
   flipped = false,
 }: {
   selected: boolean
+  preview?: boolean
   onClick: () => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
   flipped?: boolean
 }) {
+  const active = selected || preview
+
   return (
     <button
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerEnter={onPointerEnter}
+      onPointerUp={onPointerUp}
       className={classNames(
-        'flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
+        'touch-none select-none flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition',
+        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 36 58"
-        className={classNames('h-[56px] w-[30px]', flipped && 'rotate-180')}
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
+        className={classNames('pointer-events-none h-[56px] w-[30px]', flipped && 'rotate-180')}
+        fill={active ? '#2563eb' : 'none'}
+        stroke={active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -289,21 +404,40 @@ function PermanentTooth({
   )
 }
 
-function PrimaryMolarTooth({ selected, onClick }: { selected: boolean; onClick: () => void }) {
+function PrimaryMolarTooth({
+  selected,
+  preview,
+  onClick,
+  onPointerDown,
+  onPointerEnter,
+  onPointerUp,
+}: {
+  selected: boolean
+  preview?: boolean
+  onClick: () => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+}) {
+  const active = selected || preview
+
   return (
     <button
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerEnter={onPointerEnter}
+      onPointerUp={onPointerUp}
       className={classNames(
-        'flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
+        'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
+        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 40 58"
-        className="h-[56px] w-[34px]"
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
+        className="pointer-events-none h-[56px] w-[34px]"
+        fill={active ? '#2563eb' : 'none'}
+        stroke={active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -314,21 +448,40 @@ function PrimaryMolarTooth({ selected, onClick }: { selected: boolean; onClick: 
   )
 }
 
-function PrimarySlimTooth({ selected, onClick }: { selected: boolean; onClick: () => void }) {
+function PrimarySlimTooth({
+  selected,
+  preview,
+  onClick,
+  onPointerDown,
+  onPointerEnter,
+  onPointerUp,
+}: {
+  selected: boolean
+  preview?: boolean
+  onClick: () => void
+  onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+}) {
+  const active = selected || preview
+
   return (
     <button
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerEnter={onPointerEnter}
+      onPointerUp={onPointerUp}
       className={classNames(
-        'flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        selected ? 'bg-[#fff8df]' : 'hover:bg-[#f8fafc]'
+        'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
+        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 36 58"
-        className="h-[56px] w-[34px]"
-        fill={selected ? '#fff4cf' : 'none'}
-        stroke={selected ? '#d4a72c' : '#c9cdd5'}
+        className="pointer-events-none h-[56px] w-[34px]"
+        fill={active ? '#2563eb' : 'none'}
+        stroke={active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -344,12 +497,20 @@ function PermanentChart({
   topNumbers,
   bottomNumbers,
   selectedTeeth,
+  previewTeeth,
   onToggle,
+  onPointerDownTooth,
+  onPointerEnterTooth,
+  onPointerUpTooth,
 }: {
   topNumbers: number[]
   bottomNumbers: number[]
   selectedTeeth: string[]
+  previewTeeth: string[]
   onToggle: (tooth: string) => void
+  onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnterTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUpTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const leftTop = topNumbers.slice(0, 8)
   const rightTop = topNumbers.slice(8)
@@ -364,7 +525,15 @@ function PermanentChart({
         return (
           <div key={`${bottom ? 'pb' : 'pt'}-${n}`} className="flex flex-col items-center">
             {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
-            <PermanentTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} flipped={!bottom} />
+            <PermanentTooth
+              selected={selectedTeeth.includes(key)}
+              preview={previewTeeth.includes(key)}
+              onClick={() => onToggle(key)}
+              onPointerDown={(event) => onPointerDownTooth(key, event)}
+              onPointerEnter={(event) => onPointerEnterTooth(key, event)}
+              onPointerUp={(event) => onPointerUpTooth(key, event)}
+              flipped={!bottom}
+            />
             {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
           </div>
         )
@@ -401,12 +570,20 @@ function PrimaryChart({
   topNumbers,
   bottomNumbers,
   selectedTeeth,
+  previewTeeth,
   onToggle,
+  onPointerDownTooth,
+  onPointerEnterTooth,
+  onPointerUpTooth,
 }: {
   topNumbers: number[]
   bottomNumbers: number[]
   selectedTeeth: string[]
+  previewTeeth: string[]
   onToggle: (tooth: string) => void
+  onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerEnterTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUpTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const leftTop = topNumbers.slice(0, 5)
   const rightTop = topNumbers.slice(5)
@@ -423,9 +600,23 @@ function PrimaryChart({
           <div key={`${bottom ? 'cb' : 'ct'}-${n}`} className="flex flex-col items-center">
             {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
             {isMolar ? (
-              <PrimaryMolarTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} />
+              <PrimaryMolarTooth
+                selected={selectedTeeth.includes(key)}
+                preview={previewTeeth.includes(key)}
+                onClick={() => onToggle(key)}
+                onPointerDown={(event) => onPointerDownTooth(key, event)}
+                onPointerEnter={(event) => onPointerEnterTooth(key, event)}
+                onPointerUp={(event) => onPointerUpTooth(key, event)}
+              />
             ) : (
-              <PrimarySlimTooth selected={selectedTeeth.includes(key)} onClick={() => onToggle(key)} />
+              <PrimarySlimTooth
+                selected={selectedTeeth.includes(key)}
+                preview={previewTeeth.includes(key)}
+                onClick={() => onToggle(key)}
+                onPointerDown={(event) => onPointerDownTooth(key, event)}
+                onPointerEnter={(event) => onPointerEnterTooth(key, event)}
+                onPointerUp={(event) => onPointerUpTooth(key, event)}
+              />
             )}
             {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
           </div>
@@ -478,8 +669,8 @@ function SelectButton({
         'rounded-[16px] border px-4 py-3 text-[14px] font-semibold transition sm:rounded-[18px] sm:px-5 sm:py-4 sm:text-[16px]',
         wide ? 'w-full' : 'w-full sm:w-[210px]',
         selected
-          ? 'border-[#d4a72c] bg-[#efc34a] text-white shadow-[0_10px_24px_rgba(212,167,44,0.18)]'
-          : 'border-[#efc34a] bg-[#fffdf7] text-[#4d5968] hover:bg-[#fff8e8]'
+          ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
+          : 'border-[#d6dde8] bg-white text-[#4d5968] hover:bg-[#f8fafc]'
       )}
     >
       {label}
@@ -493,11 +684,17 @@ export default function NewOrderPage() {
   const [authUser, setAuthUser] = useState<StoredUser | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const suppressNextClickRef = useRef(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [loadingClinicInfo, setLoadingClinicInfo] = useState(true)
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState(false)
+
+  const [toothDragStart, setToothDragStart] = useState('')
+  const [toothDragCurrent, setToothDragCurrent] = useState('')
+  const [isToothDragging, setIsToothDragging] = useState(false)
+  const [didToothDrag, setDidToothDrag] = useState(false)
 
   const [patientName, setPatientName] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -518,6 +715,16 @@ export default function NewOrderPage() {
   const [files, setFiles] = useState<File[]>([])
 
   const [isAgreed, setIsAgreed] = useState(false)
+
+  const previewTeeth = useMemo(() => {
+    if (!isToothDragging || !toothDragStart || !toothDragCurrent) return []
+    return getToothRange(toothDragStart, toothDragCurrent)
+  }, [isToothDragging, toothDragStart, toothDragCurrent])
+
+  const priceInfo = useMemo(
+    () => calculatePrice(productType, selectedTeeth, jigRequired),
+    [productType, selectedTeeth, jigRequired]
+  )
 
   useEffect(() => {
     const token = window.localStorage.getItem('smilecad_token')
@@ -638,9 +845,60 @@ export default function NewOrderPage() {
   }, [selectedTeeth])
 
   const toggleTooth = (tooth: string) => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false
+      return
+    }
+
     setSelectedTeeth((prev) =>
       prev.includes(tooth) ? prev.filter((item) => item !== tooth) : [...prev, tooth]
     )
+  }
+
+  const handleToothPointerDown = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+
+    setToothDragStart(tooth)
+    setToothDragCurrent(tooth)
+    setIsToothDragging(true)
+    setDidToothDrag(false)
+  }
+
+  const handleToothPointerEnter = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
+    if (!isToothDragging || !toothDragStart) return
+
+    event.preventDefault()
+
+    if (tooth !== toothDragStart) {
+      setDidToothDrag(true)
+    }
+
+    setToothDragCurrent(tooth)
+  }
+
+  const handleToothPointerUp = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
+    if (!isToothDragging || !toothDragStart) return
+
+    event.preventDefault()
+
+    const endTooth = tooth || toothDragCurrent || toothDragStart
+    const range = getToothRange(toothDragStart, endTooth)
+    const isRangeDrag = didToothDrag || toothDragStart !== endTooth
+
+    if (isRangeDrag) {
+      setSelectedTeeth((prev) => Array.from(new Set([...prev, ...range])))
+      suppressNextClickRef.current = true
+    }
+
+    setToothDragStart('')
+    setToothDragCurrent('')
+    setIsToothDragging(false)
+    setDidToothDrag(false)
+  }
+
+  const clearAllTeeth = () => {
+    setSelectedTeeth([])
   }
 
   const validateDeliveryDate = (value: string) => {
@@ -889,6 +1147,15 @@ export default function NewOrderPage() {
           isAgreed,
           scanFileNames,
           scanFilePaths,
+
+          toothCount: priceInfo.toothCount,
+          productBasePrice: priceInfo.productBasePrice,
+          basePrice: priceInfo.productBasePrice,
+          toothAdjustmentPrice: priceInfo.toothAdjustmentPrice,
+          toothExtraPrice: priceInfo.toothAdjustmentPrice,
+          jigPrice: priceInfo.jigPrice,
+          totalPrice: priceInfo.totalPrice,
+          priceDescription: priceInfo.priceDescription,
         }),
       })
 
@@ -961,7 +1228,7 @@ export default function NewOrderPage() {
           <form
             id="new-order-form"
             onSubmit={handleSubmit}
-            className="grid grid-cols-1 gap-5 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[340px_minmax(0,1fr)_300px] xl:p-8"
+            className="grid grid-cols-1 gap-5 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[340px_minmax(0,1fr)_320px] xl:p-8"
           >
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <SectionTitle title="기본 정보" />
@@ -1094,25 +1361,55 @@ export default function NewOrderPage() {
             </div>
 
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-              <SectionTitle title="치아 번호 (영구치) *" />
+              <SectionTitle
+                title="치아 번호 (영구치) *"
+                description="드래그로 범위를 선택하고, 선택된 치아를 클릭하면 제외됩니다."
+              />
 
               <PermanentChart
                 topNumbers={PERMANENT_TOP}
                 bottomNumbers={PERMANENT_BOTTOM}
                 selectedTeeth={selectedTeeth}
+                previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
+                onPointerDownTooth={handleToothPointerDown}
+                onPointerEnterTooth={handleToothPointerEnter}
+                onPointerUpTooth={handleToothPointerUp}
               />
 
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 text-[16px] font-extrabold text-[#263142] sm:px-6 sm:text-[17px]">
-                치아 번호 (유치) *
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 sm:px-6">
+                <div className="text-[16px] font-extrabold text-[#263142] sm:text-[17px]">치아 번호 (유치) *</div>
+                <div className="mt-1 text-[12px] font-semibold text-[#98a2b3]">
+                  드래그로 범위를 선택하고, 선택된 치아를 클릭하면 제외됩니다.
+                </div>
               </div>
 
               <PrimaryChart
                 topNumbers={PRIMARY_TOP}
                 bottomNumbers={PRIMARY_BOTTOM}
                 selectedTeeth={selectedTeeth}
+                previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
+                onPointerDownTooth={handleToothPointerDown}
+                onPointerEnterTooth={handleToothPointerEnter}
+                onPointerUpTooth={handleToothPointerUp}
               />
+
+              <div className="border-t border-[#e9edf4] px-4 py-4 sm:px-6">
+                <div className="flex flex-col gap-3 rounded-[18px] bg-[#f8fafc] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-[13px] font-bold text-[#667085]">선택 치아</div>
+                    <div className="mt-1 text-[18px] font-black text-[#1f2937]">{selectedTeeth.length}개</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearAllTeeth}
+                    className="rounded-[12px] border border-[#d6dde8] bg-white px-4 py-2 text-[13px] font-bold text-[#64748b]"
+                  >
+                    전체 선택 해제
+                  </button>
+                </div>
+              </div>
 
               <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 text-[16px] font-extrabold text-[#263142] sm:px-6 sm:text-[17px]">
                 유형 *
@@ -1153,7 +1450,7 @@ export default function NewOrderPage() {
                   지그 제작 여부 *
                 </div>
                 <div className="mt-2 text-[13px] font-bold text-red-500">
-                  (제작시 5000원 추가 비용 발생)
+                  제작 시 {formatMoney(JIG_PRICE)} 추가 비용 발생
                 </div>
               </div>
 
@@ -1186,7 +1483,7 @@ export default function NewOrderPage() {
                   className={classNames(
                     'flex min-h-[150px] cursor-pointer items-center justify-center rounded-[18px] border border-dashed text-center transition sm:min-h-[164px]',
                     dragActive
-                      ? 'border-[#d4a72c] bg-[#fff8e8] text-[#8a6510]'
+                      ? 'border-[#2563eb] bg-[#eaf2ff] text-[#1d4ed8]'
                       : 'border-[#d5dde8] bg-[#fbfcfe] text-[#8b95a5]'
                   )}
                 >
@@ -1294,10 +1591,60 @@ export default function NewOrderPage() {
             </div>
 
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <SectionTitle title="요약" />
+              <SectionTitle title="요약 / 예상 금액" />
 
               <div className="p-4 sm:p-5">
                 <div className="grid gap-3 rounded-[18px] border border-dashed border-[#d8dfe8] bg-[#fbfcfe] p-4 sm:p-5">
+                  <div className="rounded-[14px] bg-white p-4 text-center shadow-sm">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">총 예상 금액</div>
+                    <div className="text-[26px] font-black text-[#2563eb]">{formatMoney(priceInfo.totalPrice)}</div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4">
+                    <div className="mb-3 text-[13px] font-black text-[#475467]">금액 상세</div>
+
+                    <div className="space-y-2 text-[13px] font-bold text-[#667085]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>제품 기본 금액</span>
+                        <span className="text-[#1f2937]">{formatMoney(priceInfo.productBasePrice)}</span>
+                      </div>
+
+                      {productType === 'NT-tainer' && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span>치아 수 조정</span>
+                          <span
+                            className={classNames(
+                              priceInfo.toothAdjustmentPrice > 0 && 'text-red-500',
+                              priceInfo.toothAdjustmentPrice < 0 && 'text-blue-500',
+                              priceInfo.toothAdjustmentPrice === 0 && 'text-[#1f2937]'
+                            )}
+                          >
+                            {priceInfo.toothAdjustmentPrice >= 0 ? '+' : '-'}
+                            {formatMoney(Math.abs(priceInfo.toothAdjustmentPrice))}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span>지그 제작</span>
+                        <span className="text-[#1f2937]">+{formatMoney(priceInfo.jigPrice)}</span>
+                      </div>
+
+                      <div className="border-t border-[#e5e9f0] pt-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[#1f2937]">합계</span>
+                          <span className="text-[18px] font-black text-[#2563eb]">
+                            {formatMoney(priceInfo.totalPrice)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-[12px] bg-white p-3 text-[12px] font-semibold leading-5 text-[#98a2b3]">
+                      {priceInfo.priceDescription}
+                    </div>
+                  </div>
+
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
                     <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">유형</div>
                     <div className="text-[15px] font-bold text-[#475467]">{productType || '선택 전'}</div>
@@ -1306,6 +1653,7 @@ export default function NewOrderPage() {
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
                     <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">치아 번호</div>
                     <div className="break-words text-[15px] font-bold text-[#475467]">{selectedTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-[#2563eb]">총 {selectedTeeth.length}개</div>
                   </div>
 
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
