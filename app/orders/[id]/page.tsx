@@ -174,23 +174,29 @@ function IconDownload() {
 
 function ToothIcon({
   selected,
+  missing = false,
   flipped = false,
 }: {
   selected: boolean
+  missing?: boolean
   flipped?: boolean
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
         className={`flex h-[48px] w-[34px] items-center justify-center rounded-[13px] transition-all duration-300 ${
-          selected ? 'bg-blue-500 shadow-lg shadow-blue-100' : 'bg-white'
+          missing
+            ? 'bg-red-500 shadow-lg shadow-red-100'
+            : selected
+              ? 'bg-blue-500 shadow-lg shadow-blue-100'
+              : 'bg-white'
         }`}
       >
         <svg
           viewBox="0 0 36 58"
           className={`h-[42px] w-[27px] ${flipped ? 'rotate-180' : ''}`}
-          fill={selected ? '#2563eb' : 'none'}
-          stroke={selected ? '#ffffff' : '#b6c2d2'}
+          fill={missing ? '#ef4444' : selected ? '#2563eb' : 'none'}
+          stroke={missing || selected ? '#ffffff' : '#b6c2d2'}
           strokeWidth="1.8"
         >
           <path
@@ -198,6 +204,12 @@ function ToothIcon({
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+          {missing && (
+            <>
+              <path d="M11 18 L25 40" stroke="white" strokeWidth="3" strokeLinecap="round" />
+              <path d="M25 18 L11 40" stroke="white" strokeWidth="3" strokeLinecap="round" />
+            </>
+          )}
         </svg>
       </div>
     </div>
@@ -258,6 +270,33 @@ function statusStyle(status?: string | null) {
   }
 
   return 'border-blue-100 bg-blue-50 text-blue-700'
+}
+
+function formatMoney(value?: number | string | null) {
+  const numeric = Number(value || 0)
+
+  if (!Number.isFinite(numeric)) return '0원'
+
+  return `${numeric.toLocaleString('ko-KR')}원`
+}
+
+function parseTextArray(value: any): string[] {
+  if (!value) return []
+
+  if (Array.isArray(value)) {
+    return value.map(String).map((item) => item.trim()).filter(Boolean)
+  }
+
+  return String(value)
+    .replace(/[{}"]/g, '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function numberOrZero(value: any) {
+  const numeric = Number(value || 0)
+  return Number.isFinite(numeric) ? numeric : 0
 }
 
 export default function OrderDetailPage() {
@@ -463,14 +502,8 @@ export default function OrderDetailPage() {
   const handleDownloadAll = async () => {
     if (!order?.scan_file_paths) return
 
-    const paths = String(order.scan_file_paths)
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-
-    const names = String(order.scan_file_names || '')
-      .split(',')
-      .map((value) => value.trim())
+    const paths = parseTextArray(order.scan_file_paths)
+    const names = parseTextArray(order.scan_file_names)
 
     for (let i = 0; i < paths.length; i += 1) {
       const originalName = names[i] || `scan-file-${i + 1}.stl`
@@ -480,18 +513,33 @@ export default function OrderDetailPage() {
   }
 
   const selectedTeethList = useMemo<string[]>(() => {
-    if (!order?.selected_teeth) return []
+    return parseTextArray(order?.selected_teeth)
+  }, [order])
 
-    if (Array.isArray(order.selected_teeth)) {
-      return order.selected_teeth.map(String)
+  const missingTeethList = useMemo<string[]>(() => {
+    return parseTextArray(order?.missing_teeth)
+  }, [order])
+
+  const billableTeethList = useMemo<string[]>(() => {
+    const storedBillableTeeth = parseTextArray(order?.billable_teeth)
+
+    if (storedBillableTeeth.length > 0) {
+      return storedBillableTeeth
     }
 
-    return String(order.selected_teeth)
-      .replace(/[{}"]/g, '')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-  }, [order])
+    return selectedTeethList.filter((tooth) => !missingTeethList.includes(tooth))
+  }, [order, selectedTeethList, missingTeethList])
+
+  const selectedToothCount =
+    numberOrZero(order?.selected_tooth_count) || selectedTeethList.length
+
+  const missingToothCount =
+    numberOrZero(order?.missing_tooth_count) || missingTeethList.length
+
+  const billableToothCount =
+    numberOrZero(order?.billable_tooth_count) ||
+    numberOrZero(order?.tooth_count) ||
+    billableTeethList.length
 
   const selectedToothType = useMemo<'permanent' | 'primary' | 'mixed'>(() => {
     const hasPrimary = selectedTeethList.some((tooth) => PRIMARY_SET.has(tooth))
@@ -533,19 +581,30 @@ export default function OrderDetailPage() {
   }, [selectedToothType])
 
   const scanFiles = useMemo<{ path: string; name: string }[]>(() => {
-    const paths = String(order?.scan_file_paths || '')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-
-    const names = String(order?.scan_file_names || '')
-      .split(',')
-      .map((value) => value.trim())
+    const paths = parseTextArray(order?.scan_file_paths)
+    const names = parseTextArray(order?.scan_file_names)
 
     return paths.map((path, index) => ({
       path,
       name: names[index] || `scan-file-${index + 1}.stl`,
     }))
+  }, [order])
+
+  const priceDetailItems = useMemo(() => {
+    const productBasePrice = numberOrZero(order?.product_base_price || order?.base_price)
+    const toothAdjustmentPrice = numberOrZero(
+      order?.tooth_adjustment_price || order?.tooth_extra_price
+    )
+    const jigPrice = numberOrZero(order?.jig_price)
+    const totalPrice = numberOrZero(order?.total_price)
+
+    return {
+      productBasePrice,
+      toothAdjustmentPrice,
+      jigPrice,
+      totalPrice,
+      hasPrice: productBasePrice > 0 || jigPrice > 0 || totalPrice > 0,
+    }
   }, [order])
 
   const formatDateTime = (value?: string | null) => {
@@ -895,55 +954,89 @@ export default function OrderDetailPage() {
           </div>
         </section>
 
-        <section className="mb-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_1fr]">
-            <div className="border-b border-slate-100 pb-7 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
-              <div className="mb-7 flex items-center gap-3">
-                <div className="text-blue-600">
-                  <IconTooth />
-                </div>
-                <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
-                  치식 정보
-                </h2>
+        <section className="mb-7 grid grid-cols-1 gap-7 lg:grid-cols-[1fr_420px]">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-7 flex items-center gap-3">
+              <div className="text-blue-600">
+                <IconTooth />
               </div>
+              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                치식 정보
+              </h2>
+            </div>
 
-              <div>
-                <p className="text-[14px] font-bold text-slate-500">선택 치식</p>
-                <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+              <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
+                <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
+                <div className="mt-4 flex flex-wrap gap-2">
                   {selectedTeethList.length > 0 ? (
-                    selectedTeethList.map((tooth: string) => (
+                    selectedTeethList.map((tooth) => (
                       <span
-                        key={tooth}
-                        className="rounded-xl bg-blue-50 px-4 py-2 text-[15px] font-black text-blue-700"
+                        key={`selected-${tooth}`}
+                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-blue-700 shadow-sm"
                       >
                         {tooth}
                       </span>
                     ))
                   ) : (
-                    <span className="rounded-xl bg-slate-100 px-4 py-2 text-[14px] font-bold text-slate-500">
+                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
                       없음
                     </span>
                   )}
-
-                  <span className="text-[14px] font-black text-slate-700">
-                    / 총 {selectedTeethList.length}개
-                  </span>
                 </div>
+                <p className="mt-4 text-[14px] font-black text-blue-700">
+                  범위 총 {selectedToothCount}개
+                </p>
+              </div>
 
-                <div className="mt-8 space-y-3">
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-slate-600">
-                    <span className="h-3 w-3 rounded-full bg-blue-600" />
-                    선택된 치아
-                  </div>
-                  <div className="flex items-center gap-2 text-[13px] font-bold text-slate-500">
-                    <span className="h-3 w-3 rounded-full bg-slate-300" />
-                    선택되지 않은 치아
-                  </div>
+              <div className="rounded-[22px] border border-red-100 bg-red-50 p-5">
+                <p className="text-[13px] font-black text-red-500">없는 치아 / 발치 치아</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {missingTeethList.length > 0 ? (
+                    missingTeethList.map((tooth) => (
+                      <span
+                        key={`missing-${tooth}`}
+                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-red-500 shadow-sm"
+                      >
+                        {tooth}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
+                      없음
+                    </span>
+                  )}
                 </div>
+                <p className="mt-4 text-[14px] font-black text-red-500">
+                  제외 {missingToothCount}개
+                </p>
+              </div>
+
+              <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
+                <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {billableTeethList.length > 0 ? (
+                    billableTeethList.map((tooth) => (
+                      <span
+                        key={`billable-${tooth}`}
+                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-emerald-700 shadow-sm"
+                      >
+                        {tooth}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
+                      없음
+                    </span>
+                  )}
+                </div>
+                <p className="mt-4 text-[14px] font-black text-emerald-700">
+                  총 {billableToothCount}개
+                </p>
               </div>
             </div>
 
-            <div className="overflow-x-auto pb-2">
+            <div className="mt-8 overflow-x-auto pb-2">
               <div className={selectedToothType === 'primary' ? 'min-w-[620px]' : 'min-w-[900px]'}>
                 {toothChartRows.map((row, rowIndex) => (
                   <div key={row.label}>
@@ -954,14 +1047,20 @@ export default function OrderDetailPage() {
 
                       <div className="flex items-center justify-between gap-4">
                         {row.teeth.map((n) => {
-                          const selected = selectedTeethList.includes(String(n))
+                          const tooth = String(n)
+                          const selected = selectedTeethList.includes(tooth)
+                          const missing = missingTeethList.includes(tooth)
 
                           return (
                             <div key={n} className="flex flex-col items-center gap-2">
-                              <ToothIcon selected={selected} flipped={row.flipped} />
+                              <ToothIcon selected={selected} missing={missing} flipped={row.flipped} />
                               <span
                                 className={`text-[13px] font-black ${
-                                  selected ? 'text-blue-700' : 'text-slate-600'
+                                  missing
+                                    ? 'text-red-500'
+                                    : selected
+                                      ? 'text-blue-700'
+                                      : 'text-slate-600'
                                 }`}
                               >
                                 {n}
@@ -974,6 +1073,78 @@ export default function OrderDetailPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="mt-7 flex flex-wrap items-center gap-4 rounded-[20px] bg-slate-50 p-5">
+              <div className="flex items-center gap-2 text-[13px] font-bold text-blue-700">
+                <span className="h-3 w-3 rounded-full bg-blue-600" />
+                제작 범위
+              </div>
+              <div className="flex items-center gap-2 text-[13px] font-bold text-red-500">
+                <span className="h-3 w-3 rounded-full bg-red-500" />
+                없는 치아 / 발치 치아
+              </div>
+              <div className="flex items-center gap-2 text-[13px] font-bold text-slate-500">
+                <span className="h-3 w-3 rounded-full bg-slate-300" />
+                선택되지 않은 치아
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <h2 className="mb-6 text-[22px] font-black tracking-[-0.03em] text-slate-950">
+              주문 금액
+            </h2>
+
+            <div className="rounded-[24px] bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-lg shadow-blue-100">
+              <p className="text-[13px] font-black text-blue-100">총 주문 금액</p>
+              <p className="mt-3 text-[34px] font-black tracking-[-0.04em]">
+                {formatMoney(priceDetailItems.totalPrice)}
+              </p>
+            </div>
+
+            <div className="mt-5 space-y-3 rounded-[22px] border border-slate-100 bg-slate-50 p-5">
+              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                <span className="text-slate-500">제품 기본 금액</span>
+                <span className="text-slate-950">
+                  {formatMoney(priceDetailItems.productBasePrice)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                <span className="text-slate-500">청구 치아 수 조정</span>
+                <span
+                  className={
+                    priceDetailItems.toothAdjustmentPrice > 0
+                      ? 'text-red-500'
+                      : priceDetailItems.toothAdjustmentPrice < 0
+                        ? 'text-blue-500'
+                        : 'text-slate-950'
+                  }
+                >
+                  {priceDetailItems.toothAdjustmentPrice >= 0 ? '+' : '-'}
+                  {formatMoney(Math.abs(priceDetailItems.toothAdjustmentPrice))}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                <span className="text-slate-500">지그 제작</span>
+                <span className="text-slate-950">+{formatMoney(priceDetailItems.jigPrice)}</span>
+              </div>
+
+              <div className="border-t border-slate-200 pt-3">
+                <div className="flex items-center justify-between gap-4 text-[16px] font-black">
+                  <span className="text-slate-950">합계</span>
+                  <span className="text-blue-700">{formatMoney(priceDetailItems.totalPrice)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-[18px] bg-slate-50 p-5">
+              <p className="text-[13px] font-black text-slate-500">가격 산정 기준</p>
+              <p className="mt-2 text-[13px] font-semibold leading-6 text-slate-600">
+                {order.price_description || '가격 산정 정보가 없습니다.'}
+              </p>
             </div>
           </div>
         </section>
