@@ -1553,6 +1553,52 @@ export default function NewOrderPage() {
                 description="드래그로 제작 범위를 선택하고, 선택된 치아를 클릭하면 없는 치아로 표시되어 금액에서 제외됩니다."
               />
 
+              <div className="border-b border-[#e9edf4] bg-[#f8fafc] px-4 py-4 sm:px-6">
+                <div className="rounded-[18px] border border-blue-100 bg-blue-50 p-4">
+                  <div className="mb-3 text-[14px] font-black text-[#1d4ed8]">
+                    치식 선택 방법
+                  </div>
+
+                  <div className="grid gap-3 text-[13px] font-bold leading-5 text-[#2563eb] md:grid-cols-3">
+                    <div className="rounded-[14px] bg-white/70 p-3">
+                      <div className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-blue-400">
+                        STEP 1
+                      </div>
+                      드래그로 제작할 치아 범위를 한 번에 선택합니다.
+                    </div>
+
+                    <div className="rounded-[14px] bg-white/70 p-3">
+                      <div className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-blue-400">
+                        STEP 2
+                      </div>
+                      선택된 치아를 한 번 더 클릭하면 없는 치아 / 발치 치아로 표시됩니다.
+                    </div>
+
+                    <div className="rounded-[14px] bg-white/70 p-3">
+                      <div className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-blue-400">
+                        STEP 3
+                      </div>
+                      빨간 치아를 다시 클릭하면 선택이 해제됩니다.
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-3 text-[12px] font-black">
+                    <span className="inline-flex items-center gap-1.5 text-[#2563eb]">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#2563eb]" />
+                      파란색: 제작 범위
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-red-500">
+                      <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                      빨간색: 없는 치아 / 발치 치아
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[#94a3b8]">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#cbd5e1]" />
+                      회색: 선택 안 됨
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <PermanentChart
                 topNumbers={PERMANENT_TOP}
                 bottomNumbers={PERMANENT_BOTTOM}
