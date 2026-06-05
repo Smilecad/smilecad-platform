@@ -72,7 +72,6 @@ const JIG_PRICE = 5000
 const FIXED_PRODUCT_PRICES: Record<ProductType, number | null> = {
   'NT-tainer': null,
   'NT-spacer': 35000,
-  'NT-regainer': 35000,
   'NT-regainer': 45000,
   'NT-lingual arch': 65000,
   'NT-uprighter': 45000,
