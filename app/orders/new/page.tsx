@@ -63,6 +63,9 @@ const PRIMARY_BOTTOM = [85, 84, 83, 82, 81, 71, 72, 73, 74, 75]
 
 const TOOTH_ROWS = [PERMANENT_TOP, PERMANENT_BOTTOM, PRIMARY_TOP, PRIMARY_BOTTOM]
 
+const UPPER_TOOTH_SET = new Set([...PERMANENT_TOP, ...PRIMARY_TOP].map(toToothKey))
+const LOWER_TOOTH_SET = new Set([...PERMANENT_BOTTOM, ...PRIMARY_BOTTOM].map(toToothKey))
+
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 const MAX_FILE_COUNT = 5
 
@@ -152,6 +155,15 @@ function getToothRange(startTooth: string, endTooth: string) {
   return [startTooth, endTooth]
 }
 
+function getJigUnitCount(selectedTeeth: string[]) {
+  const hasUpper = selectedTeeth.some((tooth) => UPPER_TOOTH_SET.has(tooth))
+  const hasLower = selectedTeeth.some((tooth) => LOWER_TOOTH_SET.has(tooth))
+
+  if (hasUpper && hasLower) return 2
+  if (hasUpper || hasLower) return 1
+  return 0
+}
+
 function calculatePrice(
   productType: ProductType | '',
   selectedTeeth: string[],
@@ -162,7 +174,8 @@ function calculatePrice(
   const toothCount = billableTeeth.length
   const selectedToothCount = selectedTeeth.length
   const missingToothCount = missingTeeth.length
-  const jigPrice = jigRequired === 'Yes' ? JIG_PRICE : 0
+  const jigUnitCount = jigRequired === 'Yes' ? getJigUnitCount(selectedTeeth) : 0
+  const jigPrice = jigUnitCount * JIG_PRICE
 
   if (!productType) {
     return {
@@ -794,6 +807,7 @@ export default function NewOrderPage() {
   const [files, setFiles] = useState<File[]>([])
 
   const [isAgreed, setIsAgreed] = useState(false)
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
 
   const previewTeeth = useMemo(() => {
     if (!isToothDragging || !toothDragStart || !toothDragCurrent) return []
@@ -1200,8 +1214,23 @@ export default function NewOrderPage() {
       return
     }
 
+    setError('')
+    setShowConfirmModal(true)
+  }
+
+  const submitConfirmedOrder = async () => {
+    const loginEmail = authUser?.email || authUser?.loginId || ''
+
+    if (!authToken || !loginEmail) {
+      setError('로그인 정보가 없습니다. 다시 로그인해주세요.')
+      setShowConfirmModal(false)
+      router.replace('/login')
+      return
+    }
+
     try {
       setSubmitting(true)
+      setShowConfirmModal(false)
       setError('')
 
       const createOrderApiUrl =
@@ -1618,7 +1647,7 @@ export default function NewOrderPage() {
                   지그 제작 여부 *
                 </div>
                 <div className="mt-2 text-[13px] font-bold text-red-500">
-                  제작 시 {formatMoney(JIG_PRICE)} 추가 비용 발생
+                  상악 또는 하악 1악당 {formatMoney(JIG_PRICE)} 추가 비용 발생
                 </div>
               </div>
 
@@ -1794,7 +1823,12 @@ export default function NewOrderPage() {
                       )}
 
                       <div className="flex items-center justify-between gap-3">
-                        <span>지그 제작</span>
+                        <span>
+                          지그 제작
+                          {jigRequired === 'Yes' && priceInfo.jigPrice > 0
+                            ? ` (${getJigUnitCount(selectedTeeth)}악)`
+                            : ''}
+                        </span>
                         <span className="text-[#1f2937]">+{formatMoney(priceInfo.jigPrice)}</span>
                       </div>
 
@@ -1862,6 +1896,154 @@ export default function NewOrderPage() {
           </form>
         </div>
       </div>
+
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6">
+            <div className="max-h-[92vh] w-full max-w-[620px] overflow-y-auto rounded-[26px] border border-[#d9e0ea] bg-white shadow-[0_24px_70px_rgba(15,23,42,0.28)]">
+              <div className="border-b border-[#e9edf4] bg-[#fbfcfe] px-5 py-5 sm:px-7">
+                <div className="text-[22px] font-black tracking-tight text-[#111827]">
+                  주문 내용을 최종 확인해주세요
+                </div>
+                <div className="mt-2 text-[13px] font-semibold leading-5 text-[#667085]">
+                  아래 내용이 맞는지 확인한 뒤 주문을 접수해주세요. 취소를 누르면 다시 수정할 수 있습니다.
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5 sm:p-7">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[18px] bg-[#f8fafc] p-4">
+                    <div className="text-[12px] font-bold text-[#98a2b3]">환자명</div>
+                    <div className="mt-1 text-[16px] font-black text-[#111827]">
+                      {patientName.trim() || '-'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] bg-[#f8fafc] p-4">
+                    <div className="text-[12px] font-bold text-[#98a2b3]">제품 유형</div>
+                    <div className="mt-1 text-[16px] font-black text-[#111827]">
+                      {productType || '-'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] bg-[#f8fafc] p-4">
+                    <div className="text-[12px] font-bold text-[#98a2b3]">두께</div>
+                    <div className="mt-1 text-[15px] font-black text-[#111827]">
+                      {thickness || '-'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[18px] bg-[#f8fafc] p-4">
+                    <div className="text-[12px] font-bold text-[#98a2b3]">희망 완료일</div>
+                    <div className="mt-1 text-[15px] font-black text-[#111827]">
+                      {deliveryDate || '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-[#dbeafe] bg-[#eff6ff] p-4">
+                  <div className="text-[13px] font-black text-[#2563eb]">제작 범위 치아</div>
+                  <div className="mt-2 break-words text-[15px] font-bold leading-6 text-[#1e3a8a]">
+                    {selectedTeethSummary}
+                  </div>
+                  <div className="mt-2 text-[13px] font-black text-[#2563eb]">
+                    총 {priceInfo.selectedToothCount}개
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-red-100 bg-[#fff1f2] p-4">
+                  <div className="text-[13px] font-black text-red-500">없는 치아 / 발치 치아</div>
+                  <div className="mt-2 break-words text-[15px] font-bold leading-6 text-red-500">
+                    {missingTeethSummary}
+                  </div>
+                  <div className="mt-2 text-[13px] font-black text-red-500">
+                    제외 {priceInfo.missingToothCount}개
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-emerald-100 bg-[#ecfdf5] p-4">
+                  <div className="text-[13px] font-black text-emerald-600">실제 청구 치아</div>
+                  <div className="mt-2 break-words text-[15px] font-bold leading-6 text-emerald-700">
+                    {billableTeethSummary}
+                  </div>
+                  <div className="mt-2 text-[13px] font-black text-emerald-600">
+                    총 {priceInfo.toothCount}개
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] border border-[#e5e7eb] bg-white p-4">
+                  <div className="mb-3 text-[14px] font-black text-[#111827]">금액 확인</div>
+
+                  <div className="space-y-2 text-[13px] font-bold text-[#667085]">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>제품 기본 금액</span>
+                      <span className="text-[#111827]">{formatMoney(priceInfo.productBasePrice)}</span>
+                    </div>
+
+                    {productType === 'NT-tainer' && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span>청구 치아 수 조정</span>
+                        <span
+                          className={classNames(
+                            priceInfo.toothAdjustmentPrice > 0 && 'text-red-500',
+                            priceInfo.toothAdjustmentPrice < 0 && 'text-blue-500',
+                            priceInfo.toothAdjustmentPrice === 0 && 'text-[#111827]'
+                          )}
+                        >
+                          {priceInfo.toothAdjustmentPrice >= 0 ? '+' : '-'}
+                          {formatMoney(Math.abs(priceInfo.toothAdjustmentPrice))}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-3">
+                      <span>
+                        지그 제작 {jigRequired === 'Yes' ? `(${getJigUnitCount(selectedTeeth)}악)` : ''}
+                      </span>
+                      <span className="text-[#111827]">+{formatMoney(priceInfo.jigPrice)}</span>
+                    </div>
+
+                    <div className="border-t border-[#e5e7eb] pt-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[15px] font-black text-[#111827]">총 예상 금액</span>
+                        <span className="text-[24px] font-black text-[#2563eb]">
+                          {formatMoney(priceInfo.totalPrice)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-[12px] bg-[#f8fafc] p-3 text-[12px] font-semibold leading-5 text-[#667085]">
+                    {priceInfo.priceDescription}
+                    {jigRequired === 'Yes' && priceInfo.jigPrice > 0
+                      ? `, 지그 제작 ${getJigUnitCount(selectedTeeth)}악 ${formatMoney(priceInfo.jigPrice)} 추가`
+                      : ', 지그 제작 없음'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-[#e9edf4] bg-[#fbfcfe] px-5 py-5 sm:px-7">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={submitting}
+                  className="rounded-[14px] border border-[#cfd7e3] bg-white px-4 py-3 text-[14px] font-black text-[#475467] transition hover:bg-[#f8fafc] disabled:opacity-60"
+                >
+                  다시 수정하기
+                </button>
+
+                <button
+                  type="button"
+                  onClick={submitConfirmedOrder}
+                  disabled={submitting}
+                  className="rounded-[14px] bg-[#2563eb] px-4 py-3 text-[14px] font-black text-white shadow-[0_10px_24px_rgba(37,99,235,0.24)] transition hover:bg-[#1d4ed8] disabled:opacity-60"
+                >
+                  {submitting ? '접수 중...' : '확인 후 주문 접수'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
     </main>
   )
 }
