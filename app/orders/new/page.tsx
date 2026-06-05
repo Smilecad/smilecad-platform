@@ -31,6 +31,8 @@ type StoredUser = {
 
 type PriceInfo = {
   toothCount: number
+  selectedToothCount: number
+  missingToothCount: number
   productBasePrice: number
   toothAdjustmentPrice: number
   jigPrice: number
@@ -150,13 +152,23 @@ function getToothRange(startTooth: string, endTooth: string) {
   return [startTooth, endTooth]
 }
 
-function calculatePrice(productType: ProductType | '', selectedTeeth: string[], jigRequired: string): PriceInfo {
-  const toothCount = selectedTeeth.length
+function calculatePrice(
+  productType: ProductType | '',
+  selectedTeeth: string[],
+  missingTeeth: string[],
+  jigRequired: string
+): PriceInfo {
+  const billableTeeth = selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+  const toothCount = billableTeeth.length
+  const selectedToothCount = selectedTeeth.length
+  const missingToothCount = missingTeeth.length
   const jigPrice = jigRequired === 'Yes' ? JIG_PRICE : 0
 
   if (!productType) {
     return {
       toothCount,
+      selectedToothCount,
+      missingToothCount,
       productBasePrice: 0,
       toothAdjustmentPrice: 0,
       jigPrice,
@@ -172,13 +184,15 @@ function calculatePrice(productType: ProductType | '', selectedTeeth: string[], 
 
     return {
       toothCount,
+      selectedToothCount,
+      missingToothCount,
       productBasePrice,
       toothAdjustmentPrice,
       jigPrice,
       totalPrice: productPrice + jigPrice,
       priceDescription: `NT-tainer ${BASE_TOOTH_COUNT}개 기준 ${formatMoney(
         NT_TAINER_BASE_PRICE
-      )}, 치아 1개당 ±${formatMoney(NT_TAINER_TOOTH_UNIT_PRICE)}`,
+      )}, 실제 청구 치아 1개당 ±${formatMoney(NT_TAINER_TOOTH_UNIT_PRICE)}`,
     }
   }
 
@@ -186,6 +200,8 @@ function calculatePrice(productType: ProductType | '', selectedTeeth: string[], 
 
   return {
     toothCount,
+    selectedToothCount,
+    missingToothCount,
     productBasePrice,
     toothAdjustmentPrice: 0,
     jigPrice,
@@ -246,6 +262,7 @@ function toSafeUserMessage(error: unknown, fallback = DEFAULT_USER_ERROR) {
     '주말은 희망 완료일로 선택할 수 없습니다.',
     '공휴일은 희망 완료일로 선택할 수 없습니다.',
     '치아 번호를 하나 이상 선택해주세요.',
+    '실제 제작할 치아가 하나 이상 있어야 합니다.',
     '유형을 선택해주세요.',
     '두께를 선택해주세요.',
     '지그 제작 여부를 선택해주세요.',
@@ -359,6 +376,7 @@ function TextInput({
 
 function PermanentTooth({
   selected,
+  missing,
   preview,
   onClick,
   onPointerDown,
@@ -367,6 +385,7 @@ function PermanentTooth({
   flipped = false,
 }: {
   selected: boolean
+  missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
@@ -385,20 +404,26 @@ function PermanentTooth({
       onPointerUp={onPointerUp}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition',
-        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
+        missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 36 58"
         className={classNames('pointer-events-none h-[56px] w-[30px]', flipped && 'rotate-180')}
-        fill={active ? '#2563eb' : 'none'}
-        stroke={active ? '#2563eb' : '#c9cdd5'}
+        fill={missing ? '#ef4444' : active ? '#2563eb' : 'none'}
+        stroke={missing ? '#ef4444' : active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
         <path d="M9 6 C7 12, 7 19, 9 26 C10 31, 10 37, 10 45 C10 50, 12 51, 14 46 L16.5 34 C17 31, 19 31, 19.5 34 L22 46 C24 51, 26 50, 26 45 C26 37, 26 31, 27 26 C29 19, 29 12, 27 6" />
         <path d="M9 6 C12 2, 24 2, 27 6" />
+        {missing && (
+          <>
+            <path d="M11 18 L25 40" stroke="white" strokeWidth="3" />
+            <path d="M25 18 L11 40" stroke="white" strokeWidth="3" />
+          </>
+        )}
       </svg>
     </button>
   )
@@ -406,6 +431,7 @@ function PermanentTooth({
 
 function PrimaryMolarTooth({
   selected,
+  missing,
   preview,
   onClick,
   onPointerDown,
@@ -413,6 +439,7 @@ function PrimaryMolarTooth({
   onPointerUp,
 }: {
   selected: boolean
+  missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
@@ -430,19 +457,25 @@ function PrimaryMolarTooth({
       onPointerUp={onPointerUp}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
+        missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 40 58"
         className="pointer-events-none h-[56px] w-[34px]"
-        fill={active ? '#2563eb' : 'none'}
-        stroke={active ? '#2563eb' : '#c9cdd5'}
+        fill={missing ? '#ef4444' : active ? '#2563eb' : 'none'}
+        stroke={missing ? '#ef4444' : active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
         <path d="M7 9 C8 4, 15 3, 20 7 C25 3, 32 4, 33 9 C33 16, 32 24, 29 30 C28 35, 28 41, 28 48 C28 52, 26 53, 24 48 L21.5 36 C21 33, 19 33, 18.5 36 L16 48 C14 53, 12 52, 12 48 C12 41, 12 35, 11 30 C8 24, 7 16, 7 9 Z" />
+        {missing && (
+          <>
+            <path d="M12 18 L28 40" stroke="white" strokeWidth="3" />
+            <path d="M28 18 L12 40" stroke="white" strokeWidth="3" />
+          </>
+        )}
       </svg>
     </button>
   )
@@ -450,6 +483,7 @@ function PrimaryMolarTooth({
 
 function PrimarySlimTooth({
   selected,
+  missing,
   preview,
   onClick,
   onPointerDown,
@@ -457,6 +491,7 @@ function PrimarySlimTooth({
   onPointerUp,
 }: {
   selected: boolean
+  missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
@@ -474,20 +509,26 @@ function PrimarySlimTooth({
       onPointerUp={onPointerUp}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
-        active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
+        missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
       )}
     >
       <svg
         viewBox="0 0 36 58"
         className="pointer-events-none h-[56px] w-[34px]"
-        fill={active ? '#2563eb' : 'none'}
-        stroke={active ? '#2563eb' : '#c9cdd5'}
+        fill={missing ? '#ef4444' : active ? '#2563eb' : 'none'}
+        stroke={missing ? '#ef4444' : active ? '#2563eb' : '#c9cdd5'}
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
         <path d="M10 7 C9 12, 9 18, 10 24 C11 29, 11 35, 11 43 C11 48, 13 50, 15 45 L17 33 C17.5 30, 18.5 30, 19 33 L21 45 C23 50, 25 48, 25 43 C25 35, 25 29, 26 24 C27 18, 27 12, 26 7" />
         <path d="M10 7 C13 4, 23 4, 26 7" />
+        {missing && (
+          <>
+            <path d="M11 18 L25 40" stroke="white" strokeWidth="3" />
+            <path d="M25 18 L11 40" stroke="white" strokeWidth="3" />
+          </>
+        )}
       </svg>
     </button>
   )
@@ -497,6 +538,7 @@ function PermanentChart({
   topNumbers,
   bottomNumbers,
   selectedTeeth,
+  missingTeeth,
   previewTeeth,
   onToggle,
   onPointerDownTooth,
@@ -506,6 +548,7 @@ function PermanentChart({
   topNumbers: number[]
   bottomNumbers: number[]
   selectedTeeth: string[]
+  missingTeeth: string[]
   previewTeeth: string[]
   onToggle: (tooth: string) => void
   onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
@@ -527,6 +570,7 @@ function PermanentChart({
             {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
             <PermanentTooth
               selected={selectedTeeth.includes(key)}
+              missing={missingTeeth.includes(key)}
               preview={previewTeeth.includes(key)}
               onClick={() => onToggle(key)}
               onPointerDown={(event) => onPointerDownTooth(key, event)}
@@ -570,6 +614,7 @@ function PrimaryChart({
   topNumbers,
   bottomNumbers,
   selectedTeeth,
+  missingTeeth,
   previewTeeth,
   onToggle,
   onPointerDownTooth,
@@ -579,6 +624,7 @@ function PrimaryChart({
   topNumbers: number[]
   bottomNumbers: number[]
   selectedTeeth: string[]
+  missingTeeth: string[]
   previewTeeth: string[]
   onToggle: (tooth: string) => void
   onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
@@ -602,6 +648,7 @@ function PrimaryChart({
             {isMolar ? (
               <PrimaryMolarTooth
                 selected={selectedTeeth.includes(key)}
+                missing={missingTeeth.includes(key)}
                 preview={previewTeeth.includes(key)}
                 onClick={() => onToggle(key)}
                 onPointerDown={(event) => onPointerDownTooth(key, event)}
@@ -611,6 +658,7 @@ function PrimaryChart({
             ) : (
               <PrimarySlimTooth
                 selected={selectedTeeth.includes(key)}
+                missing={missingTeeth.includes(key)}
                 preview={previewTeeth.includes(key)}
                 onClick={() => onToggle(key)}
                 onPointerDown={(event) => onPointerDownTooth(key, event)}
@@ -709,6 +757,7 @@ export default function NewOrderPage() {
   const [minimumDeliveryDate, setMinimumDeliveryDate] = useState('')
 
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([])
+  const [missingTeeth, setMissingTeeth] = useState<string[]>([])
   const [productType, setProductType] = useState<ProductType | ''>('')
   const [thickness, setThickness] = useState('')
   const [jigRequired, setJigRequired] = useState('No')
@@ -722,8 +771,8 @@ export default function NewOrderPage() {
   }, [isToothDragging, toothDragStart, toothDragCurrent])
 
   const priceInfo = useMemo(
-    () => calculatePrice(productType, selectedTeeth, jigRequired),
-    [productType, selectedTeeth, jigRequired]
+    () => calculatePrice(productType, selectedTeeth, missingTeeth, jigRequired),
+    [productType, selectedTeeth, missingTeeth, jigRequired]
   )
 
   useEffect(() => {
@@ -844,15 +893,36 @@ export default function NewOrderPage() {
     return selectedTeeth.join(', ')
   }, [selectedTeeth])
 
+  const missingTeethSummary = useMemo(() => {
+    if (missingTeeth.length === 0) return '없음'
+    return missingTeeth.join(', ')
+  }, [missingTeeth])
+
+  const billableTeethSummary = useMemo(() => {
+    const billable = selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+    if (billable.length === 0) return '선택 전'
+    return billable.join(', ')
+  }, [selectedTeeth, missingTeeth])
+
   const toggleTooth = (tooth: string) => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false
       return
     }
 
-    setSelectedTeeth((prev) =>
-      prev.includes(tooth) ? prev.filter((item) => item !== tooth) : [...prev, tooth]
-    )
+    const isSelected = selectedTeeth.includes(tooth)
+    const isMissing = missingTeeth.includes(tooth)
+
+    // 드래그로 선택된 제작 범위 안에서 클릭하면 없는 치아 / 발치 치아로 표시합니다.
+    if (isSelected) {
+      setMissingTeeth((prev) =>
+        isMissing ? prev.filter((item) => item !== tooth) : [...prev, tooth]
+      )
+      return
+    }
+
+    // 범위 밖 치아를 단독 클릭하면 제작 범위에 추가합니다.
+    setSelectedTeeth((prev) => [...prev, tooth])
   }
 
   const handleToothPointerDown = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
@@ -888,6 +958,10 @@ export default function NewOrderPage() {
 
     if (isRangeDrag) {
       setSelectedTeeth((prev) => Array.from(new Set([...prev, ...range])))
+
+      // 드래그로 다시 제작 범위에 포함한 치아는 없는 치아 표시를 해제합니다.
+      setMissingTeeth((prev) => prev.filter((tooth) => !range.includes(tooth)))
+
       suppressNextClickRef.current = true
     }
 
@@ -899,6 +973,7 @@ export default function NewOrderPage() {
 
   const clearAllTeeth = () => {
     setSelectedTeeth([])
+    setMissingTeeth([])
   }
 
   const validateDeliveryDate = (value: string) => {
@@ -1027,6 +1102,11 @@ export default function NewOrderPage() {
       return
     }
 
+    if (priceInfo.toothCount === 0) {
+      setError('실제 제작할 치아가 하나 이상 있어야 합니다.')
+      return
+    }
+
     if (!productType) {
       setError('유형을 선택해주세요.')
       return
@@ -1139,6 +1219,11 @@ export default function NewOrderPage() {
           birthDate: birthDate || null,
           productType,
           selectedTeeth,
+          missingTeeth,
+          billableTeeth: selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth)),
+          billableToothCount: priceInfo.toothCount,
+          selectedToothCount: priceInfo.selectedToothCount,
+          missingToothCount: priceInfo.missingToothCount,
           deliveryDate,
           thickness,
           jigRequired,
@@ -1363,13 +1448,14 @@ export default function NewOrderPage() {
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
               <SectionTitle
                 title="치아 번호 (영구치) *"
-                description="드래그로 범위를 선택하고, 선택된 치아를 클릭하면 제외됩니다."
+                description="드래그로 제작 범위를 선택하고, 선택된 치아를 클릭하면 없는 치아로 표시되어 금액에서 제외됩니다."
               />
 
               <PermanentChart
                 topNumbers={PERMANENT_TOP}
                 bottomNumbers={PERMANENT_BOTTOM}
                 selectedTeeth={selectedTeeth}
+                missingTeeth={missingTeeth}
                 previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
                 onPointerDownTooth={handleToothPointerDown}
@@ -1380,7 +1466,7 @@ export default function NewOrderPage() {
               <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 sm:px-6">
                 <div className="text-[16px] font-extrabold text-[#263142] sm:text-[17px]">치아 번호 (유치) *</div>
                 <div className="mt-1 text-[12px] font-semibold text-[#98a2b3]">
-                  드래그로 범위를 선택하고, 선택된 치아를 클릭하면 제외됩니다.
+                  드래그로 제작 범위를 선택하고, 선택된 치아를 클릭하면 없는 치아로 표시되어 금액에서 제외됩니다.
                 </div>
               </div>
 
@@ -1388,6 +1474,7 @@ export default function NewOrderPage() {
                 topNumbers={PRIMARY_TOP}
                 bottomNumbers={PRIMARY_BOTTOM}
                 selectedTeeth={selectedTeeth}
+                missingTeeth={missingTeeth}
                 previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
                 onPointerDownTooth={handleToothPointerDown}
@@ -1398,8 +1485,16 @@ export default function NewOrderPage() {
               <div className="border-t border-[#e9edf4] px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-3 rounded-[18px] bg-[#f8fafc] p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="text-[13px] font-bold text-[#667085]">선택 치아</div>
-                    <div className="mt-1 text-[18px] font-black text-[#1f2937]">{selectedTeeth.length}개</div>
+                    <div className="text-[13px] font-bold text-[#667085]">제작 범위</div>
+                    <div className="mt-1 text-[18px] font-black text-[#1f2937]">
+                      {priceInfo.selectedToothCount}개
+                    </div>
+                    <div className="mt-1 text-[12px] font-bold text-red-500">
+                      없는 치아 {priceInfo.missingToothCount}개
+                    </div>
+                    <div className="mt-1 text-[12px] font-bold text-[#2563eb]">
+                      실제 청구 {priceInfo.toothCount}개
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -1611,7 +1706,7 @@ export default function NewOrderPage() {
 
                       {productType === 'NT-tainer' && (
                         <div className="flex items-center justify-between gap-3">
-                          <span>치아 수 조정</span>
+                          <span>청구 치아 수 조정</span>
                           <span
                             className={classNames(
                               priceInfo.toothAdjustmentPrice > 0 && 'text-red-500',
@@ -1651,9 +1746,27 @@ export default function NewOrderPage() {
                   </div>
 
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">치아 번호</div>
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">제작 범위 치아</div>
                     <div className="break-words text-[15px] font-bold text-[#475467]">{selectedTeethSummary}</div>
-                    <div className="mt-2 text-[13px] font-black text-[#2563eb]">총 {selectedTeeth.length}개</div>
+                    <div className="mt-2 text-[13px] font-black text-[#475467]">
+                      범위 총 {priceInfo.selectedToothCount}개
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#fff1f2] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-red-400">없는 치아 / 발치 치아</div>
+                    <div className="break-words text-[15px] font-bold text-red-500">{missingTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-red-500">
+                      제외 {priceInfo.missingToothCount}개
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#eaf2ff] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#2563eb]">실제 청구 치아</div>
+                    <div className="break-words text-[15px] font-bold text-[#1d4ed8]">{billableTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-[#2563eb]">
+                      총 {priceInfo.toothCount}개
+                    </div>
                   </div>
 
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
