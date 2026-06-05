@@ -24,6 +24,22 @@ type OrderItem = {
   delivery_date?: string | null
   clinic_name?: string | null
   created_at?: string | null
+
+  selected_teeth?: string[] | string | null
+  missing_teeth?: string[] | string | null
+  billable_teeth?: string[] | string | null
+  tooth_count?: number | string | null
+  selected_tooth_count?: number | string | null
+  missing_tooth_count?: number | string | null
+  billable_tooth_count?: number | string | null
+
+  product_base_price?: number | string | null
+  base_price?: number | string | null
+  tooth_adjustment_price?: number | string | null
+  tooth_extra_price?: number | string | null
+  jig_price?: number | string | null
+  total_price?: number | string | null
+  price_description?: string | null
 }
 
 const STATUS_TABS: OrderStatus[] = [
@@ -118,6 +134,46 @@ function statusBadgeClass(status?: string | null) {
   }
 
   return 'border-blue-200 bg-blue-50 text-blue-700'
+}
+
+function formatMoney(value?: number | string | null) {
+  const numberValue = Number(value || 0)
+
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return '0원'
+  }
+
+  return `${numberValue.toLocaleString('ko-KR')}원`
+}
+
+function formatSignedMoney(value?: number | string | null) {
+  const numberValue = Number(value || 0)
+
+  if (!Number.isFinite(numberValue) || numberValue === 0) {
+    return '0원'
+  }
+
+  const sign = numberValue > 0 ? '+' : '-'
+  return `${sign}${Math.abs(numberValue).toLocaleString('ko-KR')}원`
+}
+
+function normalizeArray(value?: string[] | string | null) {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean)
+  }
+
+  if (!value) return []
+
+  return String(value)
+    .replace(/[{}"]/g, '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeNumber(value?: number | string | null, fallback = 0) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : fallback
 }
 
 export default function OrdersPage() {
@@ -235,6 +291,30 @@ export default function OrdersPage() {
     })
   }, [orders, selectedStatus, startDate, endDate])
 
+  const summary = useMemo(() => {
+    return filteredOrders.reduce(
+      (acc, order) => {
+        const selectedTeeth = normalizeArray(order.selected_teeth)
+        const missingTeeth = normalizeArray(order.missing_teeth)
+        const billableTeeth = normalizeArray(order.billable_teeth)
+
+        const billableToothCount =
+          normalizeNumber(order.billable_tooth_count, 0) ||
+          normalizeNumber(order.tooth_count, 0) ||
+          billableTeeth.length ||
+          Math.max(selectedTeeth.length - missingTeeth.length, 0)
+
+        acc.totalAmount += normalizeNumber(order.total_price, 0)
+        acc.totalBillableTeeth += billableToothCount
+        return acc
+      },
+      {
+        totalAmount: 0,
+        totalBillableTeeth: 0,
+      }
+    )
+  }, [filteredOrders])
+
   const resetDateFilter = () => {
     setStartDate('')
     setEndDate('')
@@ -277,6 +357,13 @@ export default function OrdersPage() {
                   {filteredOrders.length}
                 </span>
                 <span className="text-[12px] font-bold text-blue-100">건</span>
+              </div>
+
+              <div className="flex w-fit items-center gap-2 rounded-full bg-white px-5 py-2 shadow-sm ring-1 ring-[#d9e0ea]">
+                <span className="text-[12px] font-bold text-[#98a2b3]">금액</span>
+                <span className="text-[18px] font-black text-blue-600">
+                  {formatMoney(summary.totalAmount)}
+                </span>
               </div>
             </div>
 
@@ -369,6 +456,26 @@ export default function OrdersPage() {
             <div className="flex flex-col gap-3">
               {filteredOrders.map((order, index) => {
                 const orderIndex = filteredOrders.length - index
+                const selectedTeeth = normalizeArray(order.selected_teeth)
+                const missingTeeth = normalizeArray(order.missing_teeth)
+                const billableTeethFromDb = normalizeArray(order.billable_teeth)
+                const billableTeeth =
+                  billableTeethFromDb.length > 0
+                    ? billableTeethFromDb
+                    : selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+
+                const selectedToothCount =
+                  normalizeNumber(order.selected_tooth_count, 0) || selectedTeeth.length
+                const missingToothCount =
+                  normalizeNumber(order.missing_tooth_count, 0) || missingTeeth.length
+                const billableToothCount =
+                  normalizeNumber(order.billable_tooth_count, 0) ||
+                  normalizeNumber(order.tooth_count, 0) ||
+                  billableTeeth.length
+
+                const totalPrice = normalizeNumber(order.total_price, 0)
+                const toothAdjustmentPrice = normalizeNumber(order.tooth_adjustment_price, 0)
+                const jigPrice = normalizeNumber(order.jig_price, 0)
 
                 return (
                   <div
@@ -418,7 +525,7 @@ export default function OrdersPage() {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 rounded-[16px] bg-[#f8fafc] p-3 text-[13px] text-[#475467] sm:grid-cols-3 lg:flex lg:flex-[2.5] lg:items-center lg:justify-around lg:bg-transparent lg:p-0">
+                    <div className="grid grid-cols-2 gap-3 rounded-[16px] bg-[#f8fafc] p-3 text-[13px] text-[#475467] sm:grid-cols-4 lg:flex lg:flex-[3] lg:items-center lg:justify-around lg:bg-transparent lg:p-0">
                       <div className="flex flex-col">
                         <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
                           제품 유형
@@ -445,6 +552,52 @@ export default function OrdersPage() {
                           <span className="font-extrabold text-[#3b82f6]">
                             {order.clinic_name || '-'}
                           </span>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col">
+                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                          청구 치아
+                        </span>
+                        <span className="font-extrabold text-emerald-600">
+                          {billableToothCount}개
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col">
+                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                          주문 금액
+                        </span>
+                        <span className="font-extrabold text-blue-600">
+                          {formatMoney(totalPrice)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 rounded-[14px] border border-[#eef2f6] bg-white p-3 text-center lg:w-[250px]">
+                      <div>
+                        <div className="text-[10px] font-bold text-[#98a2b3]">제작 범위</div>
+                        <div className="mt-1 text-[13px] font-black text-[#1f2937]">
+                          {selectedToothCount}개
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-red-400">없는 치아</div>
+                        <div className="mt-1 text-[13px] font-black text-red-500">
+                          {missingToothCount}개
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-blue-500">총 금액</div>
+                        <div className="mt-1 text-[13px] font-black text-blue-600">
+                          {formatMoney(totalPrice)}
+                        </div>
+                      </div>
+                      {(toothAdjustmentPrice !== 0 || jigPrice !== 0) && (
+                        <div className="col-span-3 border-t border-[#eef2f6] pt-2 text-[11px] font-bold text-[#667085]">
+                          치아 수 조정 {formatSignedMoney(toothAdjustmentPrice)}
+                          <span className="mx-2 text-[#cbd5e1]">|</span>
+                          지그 {formatSignedMoney(jigPrice)}
                         </div>
                       )}
                     </div>
