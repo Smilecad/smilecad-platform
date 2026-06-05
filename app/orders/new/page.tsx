@@ -375,22 +375,26 @@ function TextInput({
 }
 
 function PermanentTooth({
+  tooth,
   selected,
   missing,
   preview,
   onClick,
   onPointerDown,
-  onPointerEnter,
+  onPointerMove,
   onPointerUp,
+  onPointerCancel,
   flipped = false,
 }: {
+  tooth: string
   selected: boolean
   missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
   onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
   flipped?: boolean
 }) {
   const active = selected || preview
@@ -398,10 +402,12 @@ function PermanentTooth({
   return (
     <button
       type="button"
+      data-tooth={tooth}
       onClick={onClick}
       onPointerDown={onPointerDown}
-      onPointerEnter={onPointerEnter}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[38px] items-center justify-center rounded-[12px] transition',
         missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
@@ -430,31 +436,37 @@ function PermanentTooth({
 }
 
 function PrimaryMolarTooth({
+  tooth,
   selected,
   missing,
   preview,
   onClick,
   onPointerDown,
-  onPointerEnter,
+  onPointerMove,
   onPointerUp,
+  onPointerCancel,
 }: {
+  tooth: string
   selected: boolean
   missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
   onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const active = selected || preview
 
   return (
     <button
       type="button"
+      data-tooth={tooth}
       onClick={onClick}
       onPointerDown={onPointerDown}
-      onPointerEnter={onPointerEnter}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
         missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
@@ -482,31 +494,37 @@ function PrimaryMolarTooth({
 }
 
 function PrimarySlimTooth({
+  tooth,
   selected,
   missing,
   preview,
   onClick,
   onPointerDown,
-  onPointerEnter,
+  onPointerMove,
   onPointerUp,
+  onPointerCancel,
 }: {
+  tooth: string
   selected: boolean
   missing?: boolean
   preview?: boolean
   onClick: () => void
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLButtonElement>) => void
   onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const active = selected || preview
 
   return (
     <button
       type="button"
+      data-tooth={tooth}
       onClick={onClick}
       onPointerDown={onPointerDown}
-      onPointerEnter={onPointerEnter}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       className={classNames(
         'touch-none select-none flex h-[68px] w-[40px] items-center justify-center rounded-[12px] transition',
         missing ? 'bg-[#fff1f2]' : active ? 'bg-[#eaf2ff]' : 'hover:bg-[#f8fafc]'
@@ -542,7 +560,7 @@ function PermanentChart({
   previewTeeth,
   onToggle,
   onPointerDownTooth,
-  onPointerEnterTooth,
+  onPointerMoveTooth,
   onPointerUpTooth,
 }: {
   topNumbers: number[]
@@ -552,8 +570,8 @@ function PermanentChart({
   previewTeeth: string[]
   onToggle: (tooth: string) => void
   onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnterTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
-  onPointerUpTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMoveTooth: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUpTooth: (event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const leftTop = topNumbers.slice(0, 8)
   const rightTop = topNumbers.slice(8)
@@ -569,13 +587,15 @@ function PermanentChart({
           <div key={`${bottom ? 'pb' : 'pt'}-${n}`} className="flex flex-col items-center">
             {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
             <PermanentTooth
+              tooth={key}
               selected={selectedTeeth.includes(key)}
               missing={missingTeeth.includes(key)}
               preview={previewTeeth.includes(key)}
               onClick={() => onToggle(key)}
               onPointerDown={(event) => onPointerDownTooth(key, event)}
-              onPointerEnter={(event) => onPointerEnterTooth(key, event)}
-              onPointerUp={(event) => onPointerUpTooth(key, event)}
+              onPointerMove={onPointerMoveTooth}
+              onPointerUp={onPointerUpTooth}
+              onPointerCancel={onPointerUpTooth}
               flipped={!bottom}
             />
             {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
@@ -618,7 +638,7 @@ function PrimaryChart({
   previewTeeth,
   onToggle,
   onPointerDownTooth,
-  onPointerEnterTooth,
+  onPointerMoveTooth,
   onPointerUpTooth,
 }: {
   topNumbers: number[]
@@ -628,8 +648,8 @@ function PrimaryChart({
   previewTeeth: string[]
   onToggle: (tooth: string) => void
   onPointerDownTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
-  onPointerEnterTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
-  onPointerUpTooth: (tooth: string, event: PointerEvent<HTMLButtonElement>) => void
+  onPointerMoveTooth: (event: PointerEvent<HTMLButtonElement>) => void
+  onPointerUpTooth: (event: PointerEvent<HTMLButtonElement>) => void
 }) {
   const leftTop = topNumbers.slice(0, 5)
   const rightTop = topNumbers.slice(5)
@@ -647,23 +667,27 @@ function PrimaryChart({
             {!bottom && <div className="mb-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
             {isMolar ? (
               <PrimaryMolarTooth
+                tooth={key}
                 selected={selectedTeeth.includes(key)}
                 missing={missingTeeth.includes(key)}
                 preview={previewTeeth.includes(key)}
                 onClick={() => onToggle(key)}
                 onPointerDown={(event) => onPointerDownTooth(key, event)}
-                onPointerEnter={(event) => onPointerEnterTooth(key, event)}
-                onPointerUp={(event) => onPointerUpTooth(key, event)}
+                onPointerMove={onPointerMoveTooth}
+                onPointerUp={onPointerUpTooth}
+                onPointerCancel={onPointerUpTooth}
               />
             ) : (
               <PrimarySlimTooth
+                tooth={key}
                 selected={selectedTeeth.includes(key)}
                 missing={missingTeeth.includes(key)}
                 preview={previewTeeth.includes(key)}
                 onClick={() => onToggle(key)}
                 onPointerDown={(event) => onPointerDownTooth(key, event)}
-                onPointerEnter={(event) => onPointerEnterTooth(key, event)}
-                onPointerUp={(event) => onPointerUpTooth(key, event)}
+                onPointerMove={onPointerMoveTooth}
+                onPointerUp={onPointerUpTooth}
+                onPointerCancel={onPointerUpTooth}
               />
             )}
             {bottom && <div className="mt-2 text-[12px] font-semibold text-[#525c6b]">{n}</div>}
@@ -733,6 +757,12 @@ export default function NewOrderPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const suppressNextClickRef = useRef(false)
+  const toothDragRef = useRef({
+    active: false,
+    startTooth: '',
+    currentTooth: '',
+    hasMoved: false,
+  })
 
   const [submitting, setSubmitting] = useState(false)
   const [loadingClinicInfo, setLoadingClinicInfo] = useState(true)
@@ -742,7 +772,7 @@ export default function NewOrderPage() {
   const [toothDragStart, setToothDragStart] = useState('')
   const [toothDragCurrent, setToothDragCurrent] = useState('')
   const [isToothDragging, setIsToothDragging] = useState(false)
-  const [didToothDrag, setDidToothDrag] = useState(false)
+  const [, setDidToothDrag] = useState(false)
 
   const [patientName, setPatientName] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -904,6 +934,26 @@ export default function NewOrderPage() {
     return billable.join(', ')
   }, [selectedTeeth, missingTeeth])
 
+  const getToothFromPoint = (clientX: number, clientY: number) => {
+    const element = document.elementFromPoint(clientX, clientY)
+    const toothElement = element?.closest?.('[data-tooth]') as HTMLElement | null
+    return toothElement?.dataset?.tooth || ''
+  }
+
+  const updateDragPreview = (currentTooth: string) => {
+    const startTooth = toothDragRef.current.startTooth
+
+    if (!startTooth || !currentTooth) return
+
+    if (currentTooth !== startTooth) {
+      toothDragRef.current.hasMoved = true
+      setDidToothDrag(true)
+    }
+
+    toothDragRef.current.currentTooth = currentTooth
+    setToothDragCurrent(currentTooth)
+  }
+
   const toggleTooth = (tooth: string) => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false
@@ -913,21 +963,32 @@ export default function NewOrderPage() {
     const isSelected = selectedTeeth.includes(tooth)
     const isMissing = missingTeeth.includes(tooth)
 
-    // 드래그로 선택된 제작 범위 안에서 클릭하면 없는 치아 / 발치 치아로 표시합니다.
-    if (isSelected) {
-      setMissingTeeth((prev) =>
-        isMissing ? prev.filter((item) => item !== tooth) : [...prev, tooth]
-      )
+    // 1단계: 미선택 -> 제작 치아 선택
+    if (!isSelected) {
+      setSelectedTeeth((prev) => Array.from(new Set([...prev, tooth])))
       return
     }
 
-    // 범위 밖 치아를 단독 클릭하면 제작 범위에 추가합니다.
-    setSelectedTeeth((prev) => [...prev, tooth])
+    // 2단계: 제작 치아 -> 없는 치아 / 발치 치아
+    if (isSelected && !isMissing) {
+      setMissingTeeth((prev) => Array.from(new Set([...prev, tooth])))
+      return
+    }
+
+    // 3단계: 없는 치아 -> 완전 선택 해제
+    setMissingTeeth((prev) => prev.filter((item) => item !== tooth))
+    setSelectedTeeth((prev) => prev.filter((item) => item !== tooth))
   }
 
   const handleToothPointerDown = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+
+    toothDragRef.current = {
+      active: true,
+      startTooth: tooth,
+      currentTooth: tooth,
+      hasMoved: false,
+    }
 
     setToothDragStart(tooth)
     setToothDragCurrent(tooth)
@@ -935,28 +996,28 @@ export default function NewOrderPage() {
     setDidToothDrag(false)
   }
 
-  const handleToothPointerEnter = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
-    if (!isToothDragging || !toothDragStart) return
+  const handleToothPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!toothDragRef.current.active) return
 
     event.preventDefault()
 
-    if (tooth !== toothDragStart) {
-      setDidToothDrag(true)
-    }
+    const currentTooth = getToothFromPoint(event.clientX, event.clientY)
+    if (!currentTooth) return
 
-    setToothDragCurrent(tooth)
+    updateDragPreview(currentTooth)
   }
 
-  const handleToothPointerUp = (tooth: string, event: PointerEvent<HTMLButtonElement>) => {
-    if (!isToothDragging || !toothDragStart) return
+  const finishToothDrag = () => {
+    const { active, startTooth, currentTooth, hasMoved } = toothDragRef.current
 
-    event.preventDefault()
+    if (!active || !startTooth) return
 
-    const endTooth = tooth || toothDragCurrent || toothDragStart
-    const range = getToothRange(toothDragStart, endTooth)
-    const isRangeDrag = didToothDrag || toothDragStart !== endTooth
+    const endTooth = currentTooth || startTooth
+    const isRangeDrag = hasMoved && startTooth !== endTooth
 
     if (isRangeDrag) {
+      const range = getToothRange(startTooth, endTooth)
+
       setSelectedTeeth((prev) => Array.from(new Set([...prev, ...range])))
 
       // 드래그로 다시 제작 범위에 포함한 치아는 없는 치아 표시를 해제합니다.
@@ -965,10 +1026,22 @@ export default function NewOrderPage() {
       suppressNextClickRef.current = true
     }
 
+    toothDragRef.current = {
+      active: false,
+      startTooth: '',
+      currentTooth: '',
+      hasMoved: false,
+    }
+
     setToothDragStart('')
     setToothDragCurrent('')
     setIsToothDragging(false)
     setDidToothDrag(false)
+  }
+
+  const handleToothPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    finishToothDrag()
   }
 
   const clearAllTeeth = () => {
@@ -1459,7 +1532,7 @@ export default function NewOrderPage() {
                 previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
                 onPointerDownTooth={handleToothPointerDown}
-                onPointerEnterTooth={handleToothPointerEnter}
+                onPointerMoveTooth={handleToothPointerMove}
                 onPointerUpTooth={handleToothPointerUp}
               />
 
@@ -1478,7 +1551,7 @@ export default function NewOrderPage() {
                 previewTeeth={previewTeeth}
                 onToggle={toggleTooth}
                 onPointerDownTooth={handleToothPointerDown}
-                onPointerEnterTooth={handleToothPointerEnter}
+                onPointerMoveTooth={handleToothPointerMove}
                 onPointerUpTooth={handleToothPointerUp}
               />
 
