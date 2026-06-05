@@ -9,6 +9,73 @@ const CREATE_INQUIRY_API_URL =
   process.env.NEXT_PUBLIC_NCP_CREATE_INQUIRY_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-inquiry'
 
+const DEFAULT_INQUIRY_ERROR =
+  '문의 접수 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+function isTechnicalErrorMessage(message: string) {
+  const value = message.toLowerCase()
+
+  const technicalKeywords = [
+    'failed to fetch',
+    'networkerror',
+    'cors',
+    'access-control',
+    'column',
+    'relation',
+    'constraint',
+    'violates',
+    'not-null',
+    'null value',
+    'syntax error',
+    'jwt_secret',
+    'object storage',
+    'access key',
+    'secret key',
+    '환경변수',
+    'statuscode',
+    '상태코드',
+    'internal server error',
+    'bad gateway',
+    'gateway',
+    'unexpected token',
+    'json',
+    'database',
+    'db_',
+    'postgres',
+    'sql',
+    'api gateway',
+    '토큰 서명',
+  ]
+
+  return technicalKeywords.some((keyword) => value.includes(keyword))
+}
+
+function toSafeUserMessage(error: unknown, fallback = DEFAULT_INQUIRY_ERROR) {
+  const message = error instanceof Error ? error.message : String(error || '')
+
+  if (!message) return fallback
+
+  const safeMessages = [
+    '제목과 내용을 모두 작성해주세요.',
+    '문의 유형을 선택해주세요.',
+    '제목을 입력해주세요.',
+    '상세 내용을 입력해주세요.',
+    '인증 토큰이 필요합니다.',
+    '토큰이 만료되었습니다.',
+    '로그인 정보가 없습니다. 다시 로그인해주세요.',
+  ]
+
+  if (safeMessages.some((safeMessage) => message.includes(safeMessage))) {
+    return message
+  }
+
+  if (isTechnicalErrorMessage(message)) {
+    return fallback
+  }
+
+  return fallback
+}
+
 export default function InquiryPage() {
   const router = useRouter()
 
@@ -34,8 +101,14 @@ export default function InquiryPage() {
 
     try {
       return text ? JSON.parse(text) : null
-    } catch {
-      throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
+    } catch (error) {
+      console.error('create-inquiry JSON 파싱 실패:', {
+        status: res.status,
+        text,
+        error,
+      })
+
+      throw new Error('API 응답을 처리할 수 없습니다.')
     }
   }
 
@@ -80,13 +153,15 @@ export default function InquiryPage() {
       const data = await readJsonSafely(res)
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || '문의 접수에 실패했습니다.')
+        console.error('create-inquiry 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_INQUIRY_ERROR)
       }
 
       alert('문의가 성공적으로 접수되었습니다. 담당자가 확인 후 답변 드리겠습니다.')
       router.push('/inquiries')
     } catch (error) {
-      alert(error instanceof Error ? error.message : '네트워크 오류가 발생했습니다.')
+      console.error('문의 접수 실패:', error)
+      alert(toSafeUserMessage(error, DEFAULT_INQUIRY_ERROR))
     } finally {
       setIsSubmitting(false)
     }

@@ -13,6 +13,12 @@ const REPLY_INQUIRY_API_URL =
   process.env.NEXT_PUBLIC_NCP_REPLY_INQUIRY_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/reply-inquiry'
 
+const DEFAULT_LIST_ERROR =
+  '문의내역을 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+const DEFAULT_REPLY_ERROR =
+  '답변 저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
 type InquiryItem = {
   id: string
   user_id?: string | number | null
@@ -35,6 +41,69 @@ type InquiryItem = {
 
 function classNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ')
+}
+
+function isTechnicalErrorMessage(message: string) {
+  const value = message.toLowerCase()
+
+  const technicalKeywords = [
+    'failed to fetch',
+    'networkerror',
+    'cors',
+    'access-control',
+    'column',
+    'relation',
+    'constraint',
+    'violates',
+    'not-null',
+    'null value',
+    'syntax error',
+    'jwt_secret',
+    'object storage',
+    'access key',
+    'secret key',
+    '환경변수',
+    'statuscode',
+    '상태코드',
+    'internal server error',
+    'bad gateway',
+    'gateway',
+    'unexpected token',
+    'json',
+    'database',
+    'db_',
+    'postgres',
+    'sql',
+    'api gateway',
+    '토큰 서명',
+  ]
+
+  return technicalKeywords.some((keyword) => value.includes(keyword))
+}
+
+function toSafeUserMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : String(error || '')
+
+  if (!message) return fallback
+
+  const safeMessages = [
+    '관리자만 답변을 저장할 수 있습니다.',
+    '문의를 선택해주세요.',
+    '답변 내용을 입력해주세요.',
+    '인증 토큰이 필요합니다.',
+    '토큰이 만료되었습니다.',
+    '로그인 정보가 없습니다. 다시 로그인해주세요.',
+  ]
+
+  if (safeMessages.some((safeMessage) => message.includes(safeMessage))) {
+    return message
+  }
+
+  if (isTechnicalErrorMessage(message)) {
+    return fallback
+  }
+
+  return fallback
 }
 
 function formatDateTime(value?: string | null) {
@@ -112,13 +181,19 @@ export default function InquiriesPage() {
     selectedIdRef.current = selectedId
   }, [selectedId])
 
-  const readJsonSafely = async (res: Response) => {
+  const readJsonSafely = async (res: Response, label: string) => {
     const text = await res.text()
 
     try {
       return text ? JSON.parse(text) : null
-    } catch {
-      throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway URL 또는 배포 상태를 확인해주세요.')
+    } catch (error) {
+      console.error(`${label} JSON 파싱 실패:`, {
+        status: res.status,
+        text,
+        error,
+      })
+
+      throw new Error('API 응답을 처리할 수 없습니다.')
     }
   }
 
@@ -145,7 +220,7 @@ export default function InquiriesPage() {
         body: JSON.stringify({}),
       })
 
-      const data = await readJsonSafely(res)
+      const data = await readJsonSafely(res, 'list-inquiries')
 
       if (res.status === 401) {
         window.localStorage.removeItem('smilecad_token')
@@ -155,7 +230,8 @@ export default function InquiriesPage() {
       }
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || '문의 목록을 불러오지 못했습니다.')
+        console.error('list-inquiries 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_LIST_ERROR)
       }
 
       const role = String(data.role || 'clinic').toLowerCase()
@@ -185,13 +261,13 @@ export default function InquiriesPage() {
         setReplyText('')
       }
     } catch (err) {
-      console.error(err)
+      console.error('문의내역 조회 실패:', err)
       setUserRole(null)
       setScope(null)
       setItems([])
       setSelectedId('')
       setReplyText('')
-      setErrorMessage(err instanceof Error ? err.message : '문의 목록 조회 중 오류가 발생했습니다.')
+      setErrorMessage(toSafeUserMessage(err, DEFAULT_LIST_ERROR))
     } finally {
       setLoading(false)
     }
@@ -251,7 +327,7 @@ export default function InquiriesPage() {
         }),
       })
 
-      const data = await readJsonSafely(res)
+      const data = await readJsonSafely(res, 'reply-inquiry')
 
       if (res.status === 401) {
         window.localStorage.removeItem('smilecad_token')
@@ -266,14 +342,15 @@ export default function InquiriesPage() {
       }
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || '답변 저장에 실패했습니다.')
+        console.error('reply-inquiry 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_REPLY_ERROR)
       }
 
       setMessage('답변이 저장되었습니다.')
       await loadData()
     } catch (err) {
-      console.error(err)
-      setErrorMessage(err instanceof Error ? err.message : '답변 저장 중 오류가 발생했습니다.')
+      console.error('답변 저장 실패:', err)
+      setErrorMessage(toSafeUserMessage(err, DEFAULT_REPLY_ERROR))
     } finally {
       setSubmitting(false)
     }
@@ -556,7 +633,7 @@ export default function InquiriesPage() {
             </div>
 
             <div className="mt-3 text-[14px] font-semibold text-[#667085]">
-              로그인 상태 또는 API 연결 상태를 확인해주세요.
+              잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.
             </div>
 
             <button

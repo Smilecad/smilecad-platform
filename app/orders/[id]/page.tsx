@@ -26,6 +26,79 @@ const GET_DOWNLOAD_URL_API_URL =
   process.env.NEXT_PUBLIC_NCP_GET_DOWNLOAD_URL_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-download-url'
 
+const DEFAULT_DETAIL_ERROR =
+  '주문 상세 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+const DEFAULT_STATUS_ERROR =
+  '주문 상태 변경 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+const DEFAULT_DOWNLOAD_ERROR =
+  '파일 다운로드 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+function isTechnicalErrorMessage(message: string) {
+  const value = message.toLowerCase()
+
+  const technicalKeywords = [
+    'failed to fetch',
+    'networkerror',
+    'cors',
+    'access-control',
+    'column',
+    'relation',
+    'constraint',
+    'violates',
+    'not-null',
+    'null value',
+    'syntax error',
+    'jwt_secret',
+    'object storage',
+    'access key',
+    'secret key',
+    '환경변수',
+    'statuscode',
+    '상태코드',
+    'internal server error',
+    'bad gateway',
+    'gateway',
+    'unexpected token',
+    'json',
+    'database',
+    'db_',
+    'postgres',
+    'sql',
+    '토큰 서명',
+  ]
+
+  return technicalKeywords.some((keyword) => value.includes(keyword))
+}
+
+function toSafeUserMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : String(error || '')
+
+  if (!message) return fallback
+
+  const safeMessages = [
+    '다운로드할 파일 경로가 없습니다.',
+    '주문을 찾을 수 없습니다.',
+    '주문을 찾을 수 없거나 접근 권한이 없습니다.',
+    '해당 파일에 접근할 권한이 없습니다.',
+    '관리자만 주문 상태를 변경할 수 있습니다.',
+    '로그인 정보가 없습니다. 다시 로그인해주세요.',
+    '인증 토큰이 필요합니다.',
+    '토큰이 만료되었습니다.',
+  ]
+
+  if (safeMessages.some((safeMessage) => message.includes(safeMessage))) {
+    return message
+  }
+
+  if (isTechnicalErrorMessage(message)) {
+    return fallback
+  }
+
+  return fallback
+}
+
 function IconUser() {
   return (
     <svg viewBox="0 0 48 48" className="h-12 w-12" fill="none">
@@ -216,7 +289,7 @@ export default function OrderDetailPage() {
     try {
       return text ? JSON.parse(text) : null
     } catch {
-      throw new Error('API 응답이 JSON 형식이 아닙니다. API Gateway 연결을 확인해주세요.')
+      throw new Error('API 응답을 처리할 수 없습니다.')
     }
   }
 
@@ -257,13 +330,15 @@ export default function OrderDetailPage() {
       const data = await parseJsonResponse(res)
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || '주문 상세 정보를 불러오지 못했습니다.')
+        console.error('get-order-detail 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_DETAIL_ERROR)
       }
 
       setOrder(data.order || null)
       setUserRole(data.role || 'clinic')
-    } catch (err: any) {
-      setError(err.message || '주문 상세 정보를 불러오지 못했습니다.')
+    } catch (err) {
+      console.error('주문 상세 조회 실패:', err)
+      setError(toSafeUserMessage(err, DEFAULT_DETAIL_ERROR))
     } finally {
       setLoading(false)
     }
@@ -301,13 +376,15 @@ export default function OrderDetailPage() {
       const data = await parseJsonResponse(res)
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || '상태 변경에 실패했습니다.')
+        console.error('update-order-status 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_STATUS_ERROR)
       }
 
       alert('상태가 변경되었습니다.')
       await fetchOrderDetail()
-    } catch (err: any) {
-      alert(err.message || '상태 변경 중 오류가 발생했습니다.')
+    } catch (err) {
+      console.error('상태 변경 실패:', err)
+      alert(toSafeUserMessage(err, DEFAULT_STATUS_ERROR))
     } finally {
       setUpdating(false)
     }
@@ -353,13 +430,15 @@ export default function OrderDetailPage() {
       const data = await parseJsonResponse(res)
 
       if (!res.ok || !data?.success || !data?.downloadUrl) {
-        throw new Error(data?.error || '다운로드 URL 발급에 실패했습니다.')
+        console.error('get-download-url 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_DOWNLOAD_ERROR)
       }
 
       const fileRes = await fetch(data.downloadUrl)
 
       if (!fileRes.ok) {
-        throw new Error(`파일 다운로드에 실패했습니다. 상태코드 ${fileRes.status}`)
+        console.error('Object Storage 파일 다운로드 실패:', fileRes.status)
+        throw new Error(DEFAULT_DOWNLOAD_ERROR)
       }
 
       const blob = await fileRes.blob()
@@ -373,8 +452,9 @@ export default function OrderDetailPage() {
       link.remove()
 
       window.URL.revokeObjectURL(blobUrl)
-    } catch (err: any) {
-      alert(err.message || '다운로드 실패')
+    } catch (err) {
+      console.error('파일 다운로드 실패:', err)
+      alert(toSafeUserMessage(err, DEFAULT_DOWNLOAD_ERROR))
     } finally {
       setDownloading(false)
     }
