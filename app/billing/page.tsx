@@ -76,6 +76,18 @@ type BillingApiResponse = {
   error?: string
 }
 
+type StatementPdfApiResponse = {
+  success: boolean
+  html?: string
+  fileName?: string
+  summary?: {
+    orderCount?: number
+    rowCount?: number
+    totalAmount?: number
+  }
+  error?: string
+}
+
 type StatementRow = {
   id: string
   orderId: string | number
@@ -92,6 +104,10 @@ type StatementRow = {
 const LIST_BILLING_SUMMARY_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_BILLING_SUMMARY_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-billing-summary'
+
+const CREATE_BILLING_STATEMENT_PDF_API_URL =
+  process.env.NEXT_PUBLIC_NCP_CREATE_BILLING_STATEMENT_PDF_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-billing-statement-pdf'
 
 const DEFAULT_BILLING_ERROR =
   '명세서 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
@@ -131,26 +147,6 @@ function formatStatementDate(value?: string | null) {
   const day = String(date.getDate()).padStart(2, '0')
 
   return `${month}/${day}`
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('ko-KR')
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function normalizeNumber(value: unknown, fallback = 0) {
@@ -453,6 +449,7 @@ export default function BillingPage() {
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(null)
   const [role, setRole] = useState('clinic')
   const [loading, setLoading] = useState(true)
+  const [creatingStatement, setCreatingStatement] = useState(false)
   const [error, setError] = useState('')
 
   const [startDate, setStartDate] = useState(getMonthStartDate())
@@ -596,6 +593,167 @@ export default function BillingPage() {
     setSelectedClinicName('')
   }
 
+  const createStatementPdf = async () => {
+    const token = window.localStorage.getItem('smilecad_token')
+
+    if (!token) {
+      router.replace('/login?force=1')
+      return
+    }
+
+    if (statementRows.length === 0) {
+      alert('명세서로 제작할 주문 내역이 없습니다.')
+      return
+    }
+
+    const popup = window.open('', '_blank')
+
+    if (!popup) {
+      alert('팝업이 차단되었습니다. 브라우저에서 팝업 허용 후 다시 시도해주세요.')
+      return
+    }
+
+    popup.document.write(`
+      <!doctype html>
+      <html lang="ko">
+        <head>
+          <meta charset="utf-8" />
+          <title>거래명세서 생성 중</title>
+          <style>
+            body {
+              margin: 0;
+              display: flex;
+              min-height: 100vh;
+              align-items: center;
+              justify-content: center;
+              background: #f3f5f9;
+              font-family: Arial, sans-serif;
+              color: #334155;
+            }
+            .box {
+              border: 1px solid #d9e0ea;
+              border-radius: 18px;
+              background: white;
+              padding: 28px 32px;
+              font-weight: 800;
+              box-shadow: 0 18px 45px rgba(15,23,42,0.12);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="box">거래명세서를 생성하는 중입니다...</div>
+        </body>
+      </html>
+    `)
+    popup.document.close()
+
+    try {
+      setCreatingStatement(true)
+      setError('')
+
+      const res = await fetch(CREATE_BILLING_STATEMENT_PDF_API_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          clinicName: isAdmin ? selectedClinicName : '',
+        }),
+      })
+
+      const text = await res.text()
+      let data: StatementPdfApiResponse | null = null
+
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch (parseError) {
+        console.error('create-billing-statement-pdf JSON 파싱 실패:', {
+          status: res.status,
+          text,
+          error: parseError,
+        })
+
+        throw new Error('거래명세서 생성 응답을 처리할 수 없습니다.')
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        popup.close()
+        window.localStorage.removeItem('smilecad_token')
+        window.localStorage.removeItem('smilecad_user')
+        router.replace('/login?force=1')
+        return
+      }
+
+      if (!res.ok || !data?.success || !data.html) {
+        throw new Error(data?.error || '거래명세서 생성 중 문제가 발생했습니다.')
+      }
+
+      popup.document.open()
+      popup.document.write(data.html)
+      popup.document.close()
+      popup.focus()
+    } catch (err) {
+      console.error('거래명세서 생성 실패:', err)
+      popup.document.open()
+      popup.document.write(`
+        <!doctype html>
+        <html lang="ko">
+          <head>
+            <meta charset="utf-8" />
+            <title>거래명세서 생성 실패</title>
+            <style>
+              body {
+                margin: 0;
+                display: flex;
+                min-height: 100vh;
+                align-items: center;
+                justify-content: center;
+                background: #f3f5f9;
+                font-family: Arial, sans-serif;
+                color: #b91c1c;
+              }
+              .box {
+                max-width: 520px;
+                border: 1px solid #fecaca;
+                border-radius: 18px;
+                background: #fef2f2;
+                padding: 28px 32px;
+                font-weight: 800;
+                line-height: 1.6;
+              }
+              button {
+                margin-top: 18px;
+                border: 0;
+                border-radius: 10px;
+                padding: 10px 16px;
+                background: #b91c1c;
+                color: white;
+                font-weight: 800;
+                cursor: pointer;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="box">
+              거래명세서를 생성하지 못했습니다.<br />
+              잠시 후 다시 시도해주세요.
+              <br />
+              <button onclick="window.close()">닫기</button>
+            </div>
+          </body>
+        </html>
+      `)
+      popup.document.close()
+      setError(toSafeUserMessage(err, '거래명세서 생성 중 문제가 발생했습니다.'))
+    } finally {
+      setCreatingStatement(false)
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] px-4">
@@ -624,8 +782,8 @@ export default function BillingPage() {
 
               <p className="mt-3 text-[14px] font-semibold leading-relaxed text-[#667085]">
                 {isAdmin
-                  ? '기간과 치과를 선택해 주문 금액을 조회할 수 있습니다.'
-                  : '내 계정으로 접수한 주문의 기간별 금액을 확인할 수 있습니다.'}
+                  ? '기간과 치과를 선택해 거래명세서 형식으로 주문 금액을 조회할 수 있습니다.'
+                  : '내 계정으로 접수한 주문의 기간별 거래명세서 내역을 확인할 수 있습니다.'}
               </p>
 
               {periodLabel && (
@@ -635,7 +793,7 @@ export default function BillingPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[680px]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[420px]">
               <div className="rounded-[20px] bg-[#f8fafc] p-4">
                 <div className="text-[12px] font-bold text-[#98a2b3]">주문 수</div>
                 <div className="mt-2 text-[26px] font-black text-[#111827]">
@@ -645,25 +803,9 @@ export default function BillingPage() {
               </div>
 
               <div className="rounded-[20px] bg-[#1d4ed8] p-4 text-white shadow-[0_12px_28px_rgba(29,78,216,0.26)]">
-                <div className="text-[12px] font-bold text-blue-100">총 금액</div>
+                <div className="text-[12px] font-bold text-blue-100">합계 금액</div>
                 <div className="mt-2 text-[25px] font-black">
                   {formatMoney(summary.totalPrice)}
-                </div>
-              </div>
-
-              <div className="rounded-[20px] bg-[#ecfdf5] p-4">
-                <div className="text-[12px] font-bold text-emerald-600">청구 치아</div>
-                <div className="mt-2 text-[26px] font-black text-emerald-700">
-                  {summary.totalBillableToothCount}
-                  <span className="ml-1 text-[14px] font-bold">개</span>
-                </div>
-              </div>
-
-              <div className="rounded-[20px] bg-[#fff1f2] p-4">
-                <div className="text-[12px] font-bold text-red-500">없는 치아</div>
-                <div className="mt-2 text-[26px] font-black text-red-500">
-                  {summary.totalMissingToothCount}
-                  <span className="ml-1 text-[14px] font-bold">개</span>
                 </div>
               </div>
             </div>
@@ -671,7 +813,7 @@ export default function BillingPage() {
         </section>
 
         <section className="mb-6 rounded-[24px] border border-[#d9e0ea] bg-white p-5 shadow-sm sm:p-6">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto_auto] lg:items-end">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto_auto_auto] lg:items-end">
             <div>
               <label className="mb-2 block text-[13px] font-bold text-[#475467]">
                 시작일
@@ -740,6 +882,19 @@ export default function BillingPage() {
             >
               초기화
             </button>
+
+            <button
+              type="button"
+              onClick={createStatementPdf}
+              disabled={creatingStatement || statementRows.length === 0}
+              className={`h-12 rounded-[14px] px-6 text-[14px] font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)] transition ${
+                creatingStatement || statementRows.length === 0
+                  ? 'cursor-not-allowed bg-[#cbd5e1]'
+                  : 'bg-[#111827] hover:bg-[#0f172a]'
+              }`}
+            >
+              {creatingStatement ? '제작 중...' : '명세서 제작'}
+            </button>
           </div>
         </section>
 
@@ -773,14 +928,11 @@ export default function BillingPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] border-separate border-spacing-y-2">
+                <table className="w-full min-w-[560px] border-separate border-spacing-y-2">
                   <thead>
                     <tr className="text-left text-[12px] font-black uppercase tracking-wide text-[#98a2b3]">
                       <th className="px-4 py-2">치과명</th>
                       <th className="px-4 py-2 text-right">주문 수</th>
-                      <th className="px-4 py-2 text-right">제작 범위</th>
-                      <th className="px-4 py-2 text-right">없는 치아</th>
-                      <th className="px-4 py-2 text-right">청구 치아</th>
                       <th className="px-4 py-2 text-right">합계 금액</th>
                     </tr>
                   </thead>
@@ -792,15 +944,6 @@ export default function BillingPage() {
                         </td>
                         <td className="px-4 py-4 text-right text-[14px] font-bold text-[#475467]">
                           {clinic.order_count}건
-                        </td>
-                        <td className="px-4 py-4 text-right text-[14px] font-bold text-[#475467]">
-                          {clinic.total_selected_tooth_count}개
-                        </td>
-                        <td className="px-4 py-4 text-right text-[14px] font-bold text-red-500">
-                          {clinic.total_missing_tooth_count}개
-                        </td>
-                        <td className="px-4 py-4 text-right text-[14px] font-bold text-emerald-600">
-                          {clinic.total_billable_tooth_count}개
                         </td>
                         <td className="rounded-r-[14px] px-4 py-4 text-right text-[15px] font-black text-[#2563eb]">
                           {formatMoney(clinic.total_price)}
