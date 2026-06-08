@@ -20,6 +20,8 @@ type BillingOrder = {
   clinic_name?: string | null
   patient_name?: string | null
   product_type?: string | null
+  thickness?: string | null
+  jig_required?: boolean | string | null
   selected_teeth?: string[]
   missing_teeth?: string[]
   billable_teeth?: string[]
@@ -74,6 +76,19 @@ type BillingApiResponse = {
   error?: string
 }
 
+type StatementRow = {
+  id: string
+  orderId: string | number
+  date: string
+  itemName: string
+  quantity: string
+  patientName: string
+  note: string
+  amount: number
+  clinicName?: string | null
+  createdAt?: string | null
+}
+
 const LIST_BILLING_SUMMARY_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_BILLING_SUMMARY_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-billing-summary'
@@ -81,9 +96,41 @@ const LIST_BILLING_SUMMARY_API_URL =
 const DEFAULT_BILLING_ERROR =
   '명세서 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
 
+const UPPER_TEETH = new Set([
+  '11', '12', '13', '14', '15', '16', '17', '18',
+  '21', '22', '23', '24', '25', '26', '27', '28',
+  '51', '52', '53', '54', '55',
+  '61', '62', '63', '64', '65',
+])
+
+const LOWER_TEETH = new Set([
+  '31', '32', '33', '34', '35', '36', '37', '38',
+  '41', '42', '43', '44', '45', '46', '47', '48',
+  '71', '72', '73', '74', '75',
+  '81', '82', '83', '84', '85',
+])
+
 function formatMoney(value?: number | string | null) {
   const numberValue = Number(value || 0)
   return `${numberValue.toLocaleString('ko-KR')}원`
+}
+
+function formatStatementMoney(value?: number | string | null) {
+  const numberValue = Number(value || 0)
+  return numberValue.toLocaleString('ko-KR')
+}
+
+function formatStatementDate(value?: string | null) {
+  if (!value) return '-'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return '-'
+
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${month}/${day}`
 }
 
 function formatDate(value?: string | null) {
@@ -190,22 +237,214 @@ function toSafeUserMessage(error: unknown, fallback = DEFAULT_BILLING_ERROR) {
   return fallback
 }
 
-function statusBadgeClass(status?: string | null) {
-  const value = status || '접수 대기'
+function isJigRequired(value: unknown) {
+  if (typeof value === 'boolean') return value
 
-  if (value.includes('디자인') || value.includes('작업')) {
-    return 'border-amber-200 bg-amber-50 text-amber-700'
+  const raw = String(value || '').trim().toLowerCase()
+
+  if (!raw) return false
+
+  return ['true', '1', 'yes', 'y', '필요', '제작', '예', 'on'].includes(raw)
+}
+
+function normalizeProductType(value?: string | null) {
+  return String(value || '').trim()
+}
+
+function getProductCode(productType?: string | null) {
+  const value = normalizeProductType(productType).toLowerCase()
+
+  if (value.includes('spacer')) return 'NTS'
+  if (value.includes('regainer')) return 'NTG'
+  if (value.includes('uprighter')) return 'NTU'
+  if (value.includes('lingual')) return 'NTL'
+  if (value.includes('tainer') || value.includes('retainer')) return 'NTR'
+
+  return 'NT'
+}
+
+function getProductFixedPrice(productType?: string | null) {
+  const value = normalizeProductType(productType).toLowerCase()
+
+  if (value.includes('spacer')) return 35000
+  if (value.includes('regainer')) return 45000
+  if (value.includes('uprighter')) return 45000
+  if (value.includes('lingual')) return 65000
+
+  return 35000
+}
+
+function getThicknessCode(thickness?: string | null) {
+  const raw = String(thickness || '').toLowerCase().replace(/\s+/g, '')
+
+  if (!raw) return '030'
+
+  if (raw.includes('055') || raw.includes('0.55') || raw.includes('0.055')) return '055'
+  if (raw.includes('043') || raw.includes('045') || raw.includes('0.43') || raw.includes('0.45')) return '043'
+  if (raw.includes('038') || raw.includes('040') || raw.includes('0.38') || raw.includes('0.40')) return '038'
+  if (raw.includes('030') || raw.includes('035') || raw.includes('0.30') || raw.includes('0.35')) return '030'
+
+  return '030'
+}
+
+function splitTeethByArch(teeth: string[]) {
+  const upper = teeth.filter((tooth) => UPPER_TEETH.has(String(tooth)))
+  const lower = teeth.filter((tooth) => LOWER_TEETH.has(String(tooth)))
+  const unknown = teeth.filter(
+    (tooth) => !UPPER_TEETH.has(String(tooth)) && !LOWER_TEETH.has(String(tooth))
+  )
+
+  return {
+    upper,
+    lower,
+    unknown,
+  }
+}
+
+function getArchLabel(arch: 'upper' | 'lower' | 'unknown', count: number) {
+  if (arch === 'upper') return `상악 ${count}전치`
+  if (arch === 'lower') return `하악 ${count}전치`
+  return `치아 ${count}개`
+}
+
+function buildStatementItemName({
+  order,
+  arch,
+  count,
+}: {
+  order: BillingOrder
+  arch: 'upper' | 'lower' | 'unknown'
+  count: number
+}) {
+  const productCode = getProductCode(order.product_type)
+  const thicknessCode = getThicknessCode(order.thickness)
+  const modelText = isJigRequired(order.jig_required) ? '(모델)' : ''
+  const archLabel = getArchLabel(arch, count)
+
+  return `${productCode}-${thicknessCode}${modelText} [${archLabel}]`
+}
+
+function calculateEstimatedArchAmount({
+  order,
+  count,
+}: {
+  order: BillingOrder
+  count: number
+}) {
+  const productType = normalizeProductType(order.product_type).toLowerCase()
+  const fixedPrice = getProductFixedPrice(order.product_type)
+  const jigPrice = isJigRequired(order.jig_required) ? 5000 : 0
+
+  if (productType.includes('tainer') || productType.includes('retainer')) {
+    return Math.max(0, 35000 + (count - 6) * 5000 + jigPrice)
   }
 
-  if (value.includes('수정') || value.includes('재접수')) {
-    return 'border-orange-200 bg-orange-50 text-orange-700'
+  return fixedPrice + jigPrice
+}
+
+function distributeAmount(total: number, weights: number[]) {
+  if (weights.length === 0) return []
+
+  if (weights.length === 1) return [total]
+
+  const weightTotal = weights.reduce((sum, weight) => sum + Math.max(0, weight), 0)
+
+  if (weightTotal <= 0) {
+    const base = Math.floor(total / weights.length)
+    const amounts = weights.map(() => base)
+    amounts[amounts.length - 1] += total - base * weights.length
+    return amounts
   }
 
-  if (value.includes('완료')) {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  let assigned = 0
+
+  return weights.map((weight, index) => {
+    if (index === weights.length - 1) {
+      return total - assigned
+    }
+
+    const amount = Math.round((total * Math.max(0, weight)) / weightTotal / 1000) * 1000
+    assigned += amount
+
+    return amount
+  })
+}
+
+function buildStatementRows(order: BillingOrder): StatementRow[] {
+  const selectedTeeth = safeArray(order.selected_teeth)
+  const missingTeeth = safeArray(order.missing_teeth)
+  const billableTeethFromApi = safeArray(order.billable_teeth)
+
+  const billableTeeth =
+    billableTeethFromApi.length > 0
+      ? billableTeethFromApi
+      : selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+
+  const split = splitTeethByArch(billableTeeth)
+
+  const archRows: Array<{
+    arch: 'upper' | 'lower' | 'unknown'
+    teeth: string[]
+  }> = []
+
+  if (split.upper.length > 0) {
+    archRows.push({
+      arch: 'upper',
+      teeth: split.upper,
+    })
   }
 
-  return 'border-blue-200 bg-blue-50 text-blue-700'
+  if (split.lower.length > 0) {
+    archRows.push({
+      arch: 'lower',
+      teeth: split.lower,
+    })
+  }
+
+  if (archRows.length === 0 && split.unknown.length > 0) {
+    archRows.push({
+      arch: 'unknown',
+      teeth: split.unknown,
+    })
+  }
+
+  if (archRows.length === 0) {
+    archRows.push({
+      arch: 'unknown',
+      teeth: [],
+    })
+  }
+
+  const totalPrice = normalizeNumber(order.total_price, 0)
+  const estimatedAmounts = archRows.map((item) =>
+    calculateEstimatedArchAmount({
+      order,
+      count: item.teeth.length,
+    })
+  )
+
+  const estimatedTotal = estimatedAmounts.reduce((sum, amount) => sum + amount, 0)
+  const rowAmounts =
+    totalPrice > 0 && estimatedTotal !== totalPrice
+      ? distributeAmount(totalPrice, estimatedAmounts)
+      : estimatedAmounts
+
+  return archRows.map((item, index) => ({
+    id: `${order.id}-${item.arch}-${index}`,
+    orderId: order.id,
+    date: formatStatementDate(order.created_at),
+    itemName: buildStatementItemName({
+      order,
+      arch: item.arch,
+      count: item.teeth.length,
+    }),
+    quantity: '1EA',
+    patientName: order.patient_name || '-',
+    note: '',
+    amount: rowAmounts[index] || 0,
+    clinicName: order.clinic_name || null,
+    createdAt: order.created_at || null,
+  }))
 }
 
 export default function BillingPage() {
@@ -343,37 +582,13 @@ export default function BillingPage() {
     fetchBillingSummary()
   }, [fetchBillingSummary])
 
-  const displayOrders = useMemo(() => {
-    return orders.map((order) => {
-      const selectedTeeth = safeArray(order.selected_teeth)
-      const missingTeeth = safeArray(order.missing_teeth)
-      const billableTeethFromApi = safeArray(order.billable_teeth)
-
-      const billableTeeth =
-        billableTeethFromApi.length > 0
-          ? billableTeethFromApi
-          : selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
-
-      return {
-        ...order,
-        selected_teeth: selectedTeeth,
-        missing_teeth: missingTeeth,
-        billable_teeth: billableTeeth,
-        selected_tooth_count:
-          normalizeNumber(order.selected_tooth_count, 0) || selectedTeeth.length,
-        missing_tooth_count:
-          normalizeNumber(order.missing_tooth_count, 0) || missingTeeth.length,
-        billable_tooth_count:
-          normalizeNumber(order.billable_tooth_count, 0) ||
-          normalizeNumber(order.tooth_count, 0) ||
-          billableTeeth.length,
-        total_price: normalizeNumber(order.total_price, 0),
-        product_base_price: normalizeNumber(order.product_base_price, 0),
-        tooth_adjustment_price: normalizeNumber(order.tooth_adjustment_price, 0),
-        jig_price: normalizeNumber(order.jig_price, 0),
-      }
-    })
+  const statementRows = useMemo(() => {
+    return orders.flatMap((order) => buildStatementRows(order))
   }, [orders])
+
+  const statementTotalAmount = useMemo(() => {
+    return statementRows.reduce((sum, row) => sum + normalizeNumber(row.amount, 0), 0)
+  }, [statementRows])
 
   const resetFilters = () => {
     setStartDate('')
@@ -602,119 +817,81 @@ export default function BillingPage() {
         <section className="rounded-[24px] border border-[#d9e0ea] bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:p-6">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-[21px] font-black text-[#111827]">주문별 상세 내역</h2>
+              <h2 className="text-[21px] font-black text-[#111827]">거래명세서 상세 내역</h2>
               <p className="mt-1 text-[13px] font-semibold text-[#98a2b3]">
-                주문별 금액 산정 내역을 확인할 수 있습니다.
+                실제 거래명세서에 들어갈 품목 행 기준으로 표시됩니다.
               </p>
             </div>
 
             <div className="text-[13px] font-bold text-[#667085]">
-              총 {displayOrders.length}건
+              총 {statementRows.length}줄 / {formatMoney(statementTotalAmount)}
             </div>
           </div>
 
-          {displayOrders.length === 0 ? (
+          {statementRows.length === 0 ? (
             <div className="flex min-h-[220px] items-center justify-center rounded-[18px] border border-dashed border-[#d9e0ea] px-4 py-12 text-center text-[15px] font-bold text-[#98a2b3]">
-              조회 조건에 맞는 주문이 없습니다.
+              조회 조건에 맞는 명세서 내역이 없습니다.
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1080px] border-separate border-spacing-y-2">
+              <table className="w-full min-w-[960px] border-separate border-spacing-y-2">
                 <thead>
                   <tr className="text-left text-[12px] font-black uppercase tracking-wide text-[#98a2b3]">
-                    <th className="px-4 py-2">주문번호</th>
-                    {isAdmin && <th className="px-4 py-2">치과명</th>}
+                    <th className="px-4 py-2">일자</th>
+                    <th className="px-4 py-2">품목명[규격]</th>
+                    <th className="px-4 py-2 text-center">수량(단위 포함)</th>
                     <th className="px-4 py-2">환자명</th>
-                    <th className="px-4 py-2">제품</th>
-                    <th className="px-4 py-2 text-right">제작 범위</th>
-                    <th className="px-4 py-2 text-right">없는 치아</th>
-                    <th className="px-4 py-2 text-right">청구 치아</th>
-                    <th className="px-4 py-2 text-right">기본 금액</th>
-                    <th className="px-4 py-2 text-right">치아 조정</th>
-                    <th className="px-4 py-2 text-right">지그</th>
-                    <th className="px-4 py-2 text-right">합계</th>
-                    <th className="px-4 py-2">접수일</th>
-                    <th className="px-4 py-2">상태</th>
+                    <th className="px-4 py-2">비고</th>
+                    <th className="px-4 py-2 text-right">금액</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {displayOrders.map((order) => (
-                    <tr key={order.id} className="bg-[#f8fafc]">
-                      <td className="rounded-l-[14px] px-4 py-4">
+                  {statementRows.map((row) => (
+                    <tr key={row.id} className="bg-[#f8fafc]">
+                      <td className="rounded-l-[14px] px-4 py-4 text-[13px] font-bold text-[#475467]">
+                        {row.date}
+                      </td>
+
+                      <td className="px-4 py-4">
                         <button
                           type="button"
-                          onClick={() => router.push(`/orders/${order.id}`)}
-                          className="font-black text-[#2563eb] hover:underline"
+                          onClick={() => router.push(`/orders/${row.orderId}`)}
+                          className="text-left text-[13px] font-black text-[#111827] hover:text-[#2563eb] hover:underline"
                         >
-                          {order.order_number || `ORD-${order.id}`}
+                          {row.itemName}
                         </button>
                       </td>
 
-                      {isAdmin && (
-                        <td className="px-4 py-4 text-[13px] font-bold text-[#475467]">
-                          {order.clinic_name || '-'}
-                        </td>
-                      )}
+                      <td className="px-4 py-4 text-center text-[13px] font-bold text-[#475467]">
+                        {row.quantity}
+                      </td>
 
                       <td className="px-4 py-4 text-[13px] font-bold text-[#111827]">
-                        {order.patient_name || '-'}
+                        {row.patientName}
                       </td>
 
-                      <td className="px-4 py-4 text-[13px] font-bold text-[#475467]">
-                        {order.product_type || '-'}
+                      <td className="px-4 py-4 text-[13px] font-bold text-[#94a3b8]">
+                        {row.note}
                       </td>
 
-                      <td className="px-4 py-4 text-right text-[13px] font-bold text-[#475467]">
-                        {order.selected_tooth_count}개
-                      </td>
-
-                      <td className="px-4 py-4 text-right text-[13px] font-bold text-red-500">
-                        {order.missing_tooth_count}개
-                      </td>
-
-                      <td className="px-4 py-4 text-right text-[13px] font-bold text-emerald-600">
-                        {order.billable_tooth_count}개
-                      </td>
-
-                      <td className="px-4 py-4 text-right text-[13px] font-bold text-[#475467]">
-                        {formatMoney(order.product_base_price)}
-                      </td>
-
-                      <td
-                        className={`px-4 py-4 text-right text-[13px] font-bold ${
-                          normalizeNumber(order.tooth_adjustment_price, 0) >= 0
-                            ? 'text-red-500'
-                            : 'text-emerald-600'
-                        }`}
-                      >
-                        {normalizeNumber(order.tooth_adjustment_price, 0) > 0 ? '+' : ''}
-                        {formatMoney(order.tooth_adjustment_price)}
-                      </td>
-
-                      <td className="px-4 py-4 text-right text-[13px] font-bold text-[#475467]">
-                        {formatMoney(order.jig_price)}
-                      </td>
-
-                      <td className="px-4 py-4 text-right text-[15px] font-black text-[#2563eb]">
-                        {formatMoney(order.total_price)}
-                      </td>
-
-                      <td className="px-4 py-4 text-[12px] font-bold text-[#667085]">
-                        {formatDateTime(order.created_at)}
-                      </td>
-
-                      <td className="rounded-r-[14px] px-4 py-4">
-                        <span
-                          className={`inline-flex rounded-full border px-3 py-1.5 text-[11px] font-bold ${statusBadgeClass(
-                            order.status
-                          )}`}
-                        >
-                          {order.status || '접수 대기'}
-                        </span>
+                      <td className="rounded-r-[14px] px-4 py-4 text-right text-[15px] font-black text-[#2563eb]">
+                        {formatStatementMoney(row.amount)}
                       </td>
                     </tr>
                   ))}
+
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="rounded-l-[14px] bg-[#eef2f7] px-4 py-4 text-right text-[14px] font-black text-[#111827]"
+                    >
+                      총합계 ({statementRows.length}줄)
+                    </td>
+                    <td className="rounded-r-[14px] bg-[#eef2f7] px-4 py-4 text-right text-[15px] font-black text-[#111827]">
+                      {formatStatementMoney(statementTotalAmount)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
