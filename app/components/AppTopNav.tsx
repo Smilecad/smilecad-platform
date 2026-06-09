@@ -1,18 +1,43 @@
 // app/components/AppTopNav.tsx
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+
+type NavItem = {
+  name: string
+  path: string
+  id: string
+  adminOnly?: boolean
+}
 
 export default function AppTopNav({ current }: { current?: string }) {
   const router = useRouter()
+  const [isAdmin, setIsAdmin] = useState(false)
 
-  const navItems = [
+  useEffect(() => {
+    try {
+      const savedUser = window.localStorage.getItem('smilecad_user')
+      const user = savedUser ? JSON.parse(savedUser) : null
+      setIsAdmin(user?.role === 'admin')
+    } catch {
+      setIsAdmin(false)
+    }
+  }, [])
+
+  const navItems: NavItem[] = [
     { name: '대시보드', path: '/dashboard', id: 'dashboard' },
     { name: '주문 목록', path: '/orders', id: 'orders' },
     { name: '주문 접수', path: '/orders/new', id: 'orders-new' },
     { name: '명세서', path: '/billing', id: 'billing' },
+    { name: '치과 회원목록', path: '/admin/clinics', id: 'admin-clinics', adminOnly: true },
     { name: '문의하기', path: '/inquiry', id: 'inquiry' },
   ]
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.adminOnly) return isAdmin
+    return true
+  })
 
   const handleLogout = () => {
     window.localStorage.removeItem('smilecad_token')
@@ -53,7 +78,7 @@ export default function AppTopNav({ current }: { current?: string }) {
         </button>
 
         <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <button
               key={item.id}
               type="button"
