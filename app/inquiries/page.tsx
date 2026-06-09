@@ -1,650 +1,158 @@
-// app/inquiries/page.tsx
+// app/inquiry/page.tsx
 'use client'
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppTopNav from '@/app/components/AppTopNav'
 
-const LIST_INQUIRIES_API_URL =
-  process.env.NEXT_PUBLIC_NCP_LIST_INQUIRIES_API_URL ||
-  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-inquiries'
+const COMPANY_MOBILE = '010-8551-2875'
+const KAKAO_ID = 'edsdental'
 
-const REPLY_INQUIRY_API_URL =
-  process.env.NEXT_PUBLIC_NCP_REPLY_INQUIRY_API_URL ||
-  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/reply-inquiry'
-
-const DEFAULT_LIST_ERROR =
-  '문의내역을 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
-
-const DEFAULT_REPLY_ERROR =
-  '답변 저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
-
-type InquiryItem = {
-  id: string
-  user_id?: string | number | null
-  user_role?: string | null
-  login_id?: string | null
-  clinic_name?: string | null
-  clinic_address?: string | null
-  clinic_phone?: string | null
-  title?: string | null
-  category?: string | null
-  content?: string | null
-  status?: string | null
-  answer?: string | null
-  admin_reply?: string | null
-  replied_at?: string | null
-  replied_by?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-}
-
-function classNames(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(' ')
-}
-
-function isTechnicalErrorMessage(message: string) {
-  const value = message.toLowerCase()
-
-  const technicalKeywords = [
-    'failed to fetch',
-    'networkerror',
-    'cors',
-    'access-control',
-    'column',
-    'relation',
-    'constraint',
-    'violates',
-    'not-null',
-    'null value',
-    'syntax error',
-    'jwt_secret',
-    'object storage',
-    'access key',
-    'secret key',
-    '환경변수',
-    'statuscode',
-    '상태코드',
-    'internal server error',
-    'bad gateway',
-    'gateway',
-    'unexpected token',
-    'json',
-    'database',
-    'db_',
-    'postgres',
-    'sql',
-    'api gateway',
-    '토큰 서명',
-  ]
-
-  return technicalKeywords.some((keyword) => value.includes(keyword))
-}
-
-function toSafeUserMessage(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : String(error || '')
-
-  if (!message) return fallback
-
-  const safeMessages = [
-    '관리자만 답변을 저장할 수 있습니다.',
-    '문의를 선택해주세요.',
-    '답변 내용을 입력해주세요.',
-    '인증 토큰이 필요합니다.',
-    '토큰이 만료되었습니다.',
-    '로그인 정보가 없습니다. 다시 로그인해주세요.',
-  ]
-
-  if (safeMessages.some((safeMessage) => message.includes(safeMessage))) {
-    return message
-  }
-
-  if (isTechnicalErrorMessage(message)) {
-    return fallback
-  }
-
-  return fallback
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '-'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function normalizeInquiryItem(raw: any): InquiryItem {
-  return {
-    id: String(raw?.id ?? ''),
-    user_id: raw?.user_id ?? null,
-    user_role: raw?.user_role ?? null,
-    login_id: raw?.login_id ?? null,
-    clinic_name: raw?.clinic_name ?? null,
-    clinic_address: raw?.clinic_address ?? null,
-    clinic_phone: raw?.clinic_phone ?? null,
-    title: raw?.title ?? null,
-    category: raw?.category ?? null,
-    content: raw?.content ?? null,
-    status: raw?.status ?? null,
-    answer: raw?.answer ?? null,
-    admin_reply: raw?.admin_reply ?? raw?.answer ?? null,
-    replied_at: raw?.replied_at ?? null,
-    replied_by: raw?.replied_by ?? null,
-    created_at: raw?.created_at ?? null,
-    updated_at: raw?.updated_at ?? null,
-  }
-}
-
-function StatusBadge({ status }: { status?: string | null }) {
-  const value = status || '답변 대기'
-
-  if (value === '답변 완료' || value.includes('완료')) {
-    return (
-      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
-        답변 완료
-      </span>
-    )
-  }
-
-  return (
-    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
-      답변 대기
-    </span>
-  )
-}
-
-export default function InquiriesPage() {
+export default function InquiryPage() {
   const router = useRouter()
-  const selectedIdRef = useRef('')
 
-  const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [message, setMessage] = useState('')
-  const [items, setItems] = useState<InquiryItem[]>([])
-  const [selectedId, setSelectedId] = useState('')
-  const [replyText, setReplyText] = useState('')
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [scope, setScope] = useState<'all' | 'mine' | null>(null)
+  const phoneHref = `tel:${COMPANY_MOBILE.replace(/-/g, '')}`
+  const smsHref = `sms:${COMPANY_MOBILE.replace(/-/g, '')}`
 
-  const isAdmin = userRole === 'admin'
-
-  useEffect(() => {
-    selectedIdRef.current = selectedId
-  }, [selectedId])
-
-  const readJsonSafely = async (res: Response, label: string) => {
-    const text = await res.text()
-
+  const copyText = async (value: string, label: string) => {
     try {
-      return text ? JSON.parse(text) : null
-    } catch (error) {
-      console.error(`${label} JSON 파싱 실패:`, {
-        status: res.status,
-        text,
-        error,
-      })
-
-      throw new Error('API 응답을 처리할 수 없습니다.')
+      await navigator.clipboard.writeText(value)
+      alert(`${label}이 복사되었습니다. 해당 연락처로 문의 부탁드립니다.`)
+    } catch {
+      alert(`${label}: ${value}`)
     }
-  }
-
-  const loadData = useCallback(async () => {
-    const token = window.localStorage.getItem('smilecad_token')
-
-    if (!token) {
-      router.replace('/login?force=1')
-      return
-    }
-
-    try {
-      setLoading(true)
-      setErrorMessage('')
-      setMessage('')
-
-      const res = await fetch(LIST_INQUIRIES_API_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({}),
-      })
-
-      const data = await readJsonSafely(res, 'list-inquiries')
-
-      if (res.status === 401) {
-        window.localStorage.removeItem('smilecad_token')
-        window.localStorage.removeItem('smilecad_user')
-        router.replace('/login?force=1')
-        return
-      }
-
-      if (!res.ok || !data?.success) {
-        console.error('list-inquiries 응답 오류:', data)
-        throw new Error(data?.error || DEFAULT_LIST_ERROR)
-      }
-
-      const role = String(data.role || 'clinic').toLowerCase()
-      setUserRole(role)
-      setScope(data.scope === 'all' ? 'all' : 'mine')
-
-      const nextItems: InquiryItem[] = (data.inquiries || data.items || [])
-        .map(normalizeInquiryItem)
-        .filter((item: InquiryItem) => item.id)
-
-      setItems(nextItems)
-
-      if (nextItems.length > 0) {
-        const currentSelectedId = selectedIdRef.current
-
-        const firstId =
-          currentSelectedId && nextItems.some((item) => item.id === currentSelectedId)
-            ? currentSelectedId
-            : nextItems[0].id
-
-        setSelectedId(firstId)
-
-        const selected = nextItems.find((item) => item.id === firstId)
-        setReplyText(selected?.admin_reply || '')
-      } else {
-        setSelectedId('')
-        setReplyText('')
-      }
-    } catch (err) {
-      console.error('문의내역 조회 실패:', err)
-      setUserRole(null)
-      setScope(null)
-      setItems([])
-      setSelectedId('')
-      setReplyText('')
-      setErrorMessage(toSafeUserMessage(err, DEFAULT_LIST_ERROR))
-    } finally {
-      setLoading(false)
-    }
-  }, [router])
-
-  useEffect(() => {
-    loadData()
-  }, [loadData])
-
-  const selectedItem = useMemo(() => {
-    return items.find((item) => item.id === selectedId) || null
-  }, [items, selectedId])
-
-  useEffect(() => {
-    setReplyText(selectedItem?.admin_reply || '')
-  }, [selectedItem])
-
-  const handleReplySubmit = async (e: FormEvent) => {
-    e.preventDefault()
-
-    if (!isAdmin) {
-      setErrorMessage('관리자만 답변을 저장할 수 있습니다.')
-      return
-    }
-
-    const token = window.localStorage.getItem('smilecad_token')
-
-    if (!token) {
-      router.replace('/login?force=1')
-      return
-    }
-
-    if (!selectedItem) {
-      setErrorMessage('문의를 선택해주세요.')
-      return
-    }
-
-    if (!replyText.trim()) {
-      setErrorMessage('답변 내용을 입력해주세요.')
-      return
-    }
-
-    try {
-      setSubmitting(true)
-      setErrorMessage('')
-      setMessage('')
-
-      const res = await fetch(REPLY_INQUIRY_API_URL, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          inquiryId: selectedItem.id,
-          adminReply: replyText.trim(),
-        }),
-      })
-
-      const data = await readJsonSafely(res, 'reply-inquiry')
-
-      if (res.status === 401) {
-        window.localStorage.removeItem('smilecad_token')
-        window.localStorage.removeItem('smilecad_user')
-        router.replace('/login?force=1')
-        return
-      }
-
-      if (res.status === 403) {
-        setErrorMessage(data?.error || '관리자만 답변을 저장할 수 있습니다.')
-        return
-      }
-
-      if (!res.ok || !data?.success) {
-        console.error('reply-inquiry 응답 오류:', data)
-        throw new Error(data?.error || DEFAULT_REPLY_ERROR)
-      }
-
-      setMessage('답변이 저장되었습니다.')
-      await loadData()
-    } catch (err) {
-      console.error('답변 저장 실패:', err)
-      setErrorMessage(toSafeUserMessage(err, DEFAULT_REPLY_ERROR))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
-        <div className="mx-auto w-full max-w-[1480px]">
-          <AppTopNav current="inquiries" />
-
-          <div className="rounded-[28px] border border-[#d9e0ea] bg-white px-8 py-10 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-            <div className="text-[15px] font-semibold text-[#667085]">
-              문의내역을 불러오는 중입니다...
-            </div>
-          </div>
-        </div>
-      </main>
-    )
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] px-6 py-10">
-      <div className="mx-auto w-full max-w-[1480px]">
-        <AppTopNav current="inquiries" />
+    <main className="min-h-screen bg-[#f3f5f9] px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto w-full max-w-[1180px]">
+        <AppTopNav current="inquiry" />
 
-        <section className="mb-6 rounded-[28px] border border-[#dce3ec] bg-white p-7 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-[13px] font-black uppercase tracking-[0.22em] text-blue-500">
-                SmileCAD Support
-              </div>
-              <h1 className="mt-2 text-[30px] font-black tracking-[-0.04em] text-[#111827]">
-                문의내역
-              </h1>
-              <p className="mt-2 text-[14px] font-semibold text-[#667085]">
-                {isAdmin
-                  ? '관리자 계정으로 전체 치과 문의를 확인하고 답변할 수 있습니다.'
-                  : '내 계정으로 등록한 문의와 관리자 답변을 확인할 수 있습니다.'}
-              </p>
+        <section className="overflow-hidden rounded-[30px] border border-[#d9e0ea] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+          <div className="border-b border-[#e5eaf2] bg-gradient-to-br from-[#eff6ff] to-white px-6 py-8 sm:px-10 sm:py-10">
+            <div className="mb-3 text-[13px] font-black uppercase tracking-[0.32em] text-[#2563eb]">
+              SMILECAD CONTACT
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={classNames(
-                  'rounded-full px-4 py-2 text-[13px] font-black',
-                  isAdmin
-                    ? 'bg-slate-900 text-white'
-                    : 'border border-blue-100 bg-blue-50 text-blue-700'
-                )}
-              >
-                {isAdmin ? '관리자 모드' : '치과 계정'}
-              </span>
+            <h1 className="text-[30px] font-black tracking-tight text-[#111827] sm:text-[40px]">
+              문의하기
+            </h1>
 
-              <span className="rounded-full border border-[#dce3ec] bg-[#f8fafc] px-4 py-2 text-[13px] font-black text-[#475467]">
-                {scope === 'all' ? `전체 문의 ${items.length}건` : `내 문의 ${items.length}건`}
-              </span>
+            <p className="mt-4 max-w-[760px] text-[15px] font-semibold leading-relaxed text-[#64748b]">
+              주문, 스캔 파일, 제작 일정, 수정 요청 관련 문의는 확인이 빠른 회사 휴대폰 문자
+              또는 카카오톡으로 문의 부탁드립니다.
+            </p>
+          </div>
 
-              {!isAdmin ? (
+          <div className="grid gap-5 p-6 sm:p-8 lg:grid-cols-2">
+            <section className="rounded-[24px] border border-[#d9e0ea] bg-[#f8fafc] p-6">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#2563eb] text-white">
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none">
+                  <path
+                    d="M7.5 4.5H10L11.3 8L9.7 9.3C10.7 11.2 12.2 12.7 14.1 13.7L15.4 12.1L18.9 13.4V15.9C18.9 17 18 17.9 16.9 17.9C10.9 17.9 5.5 12.5 5.5 6.5C5.5 5.4 6.4 4.5 7.5 4.5Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+
+              <h2 className="text-[22px] font-black text-[#111827]">회사 휴대폰 문의</h2>
+
+              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-[#64748b]">
+                문자 또는 전화로 문의해주시면 확인 후 안내드리겠습니다.
+              </p>
+
+              <div className="mt-6 rounded-[18px] bg-white p-5 text-[28px] font-black tracking-tight text-[#1d4ed8] shadow-sm">
+                {COMPANY_MOBILE}
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <a
+                  href={phoneHref}
+                  className="flex h-12 items-center justify-center rounded-[14px] bg-[#2563eb] text-[14px] font-black text-white shadow-[0_10px_22px_rgba(37,99,235,0.22)] transition hover:bg-[#1d4ed8]"
+                >
+                  전화 문의
+                </a>
+
+                <a
+                  href={smsHref}
+                  className="flex h-12 items-center justify-center rounded-[14px] border border-[#bfdbfe] bg-white text-[14px] font-black text-[#2563eb] transition hover:bg-[#eff6ff]"
+                >
+                  문자 문의
+                </a>
+
                 <button
                   type="button"
-                  onClick={() => router.push('/inquiry')}
-                  className="rounded-full bg-[#3b82f6] px-5 py-2 text-[13px] font-black text-white shadow-[0_10px_22px_rgba(59,130,246,0.24)]"
+                  onClick={() => copyText(COMPANY_MOBILE, '회사 휴대폰 번호')}
+                  className="h-12 rounded-[14px] border border-[#e2e8f0] bg-white text-[14px] font-black text-[#64748b] transition hover:bg-[#f1f5f9] hover:text-[#111827]"
                 >
-                  문의 작성하기
+                  번호 복사
                 </button>
-              ) : null}
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#d9e0ea] bg-[#f8fafc] p-6">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#facc15] text-[#111827]">
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none">
+                  <path
+                    d="M12 5C7.6 5 4 7.8 4 11.2C4 13.4 5.5 15.3 7.8 16.4L7.1 19L10.2 17.2C10.8 17.3 11.4 17.4 12 17.4C16.4 17.4 20 14.6 20 11.2C20 7.8 16.4 5 12 5Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </div>
+
+              <h2 className="text-[22px] font-black text-[#111827]">카카오톡 문의</h2>
+
+              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-[#64748b]">
+                카카오톡 친구 추가 후 문의 내용을 남겨주세요. 주문 관련 문의는 주문번호,
+                치과명, 환자명을 함께 남겨주시면 더 빠르게 확인할 수 있습니다.
+              </p>
+
+              <div className="mt-6 rounded-[18px] bg-white p-5 shadow-sm">
+                <div className="text-[12px] font-black uppercase tracking-[0.2em] text-[#94a3b8]">
+                  KakaoTalk ID
+                </div>
+                <div className="mt-2 text-[28px] font-black tracking-tight text-[#111827]">
+                  {KAKAO_ID}
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => copyText(KAKAO_ID, '카카오톡 아이디')}
+                  className="h-12 rounded-[14px] bg-[#111827] text-[14px] font-black text-white shadow-[0_10px_22px_rgba(15,23,42,0.18)] transition hover:bg-[#0f172a]"
+                >
+                  카톡 ID 복사
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => router.push('/orders')}
+                  className="h-12 rounded-[14px] border border-[#e2e8f0] bg-white text-[14px] font-black text-[#64748b] transition hover:bg-[#f1f5f9] hover:text-[#111827]"
+                >
+                  주문 목록으로
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div className="border-t border-[#e5eaf2] bg-[#f8fafc] px-6 py-5 sm:px-8">
+            <div className="rounded-[18px] border border-[#dbeafe] bg-[#eff6ff] p-5">
+              <h3 className="text-[15px] font-black text-[#1d4ed8]">
+                문의 시 함께 알려주시면 좋은 정보
+              </h3>
+
+              <div className="mt-3 grid gap-2 text-[14px] font-semibold text-[#475467] sm:grid-cols-2">
+                <div>• 치과명</div>
+                <div>• 주문번호</div>
+                <div>• 환자명</div>
+                <div>• 문의 내용 또는 수정 요청사항</div>
+              </div>
             </div>
           </div>
         </section>
-
-        {message ? (
-          <div className="mb-6 rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-            {message}
-          </div>
-        ) : null}
-
-        {errorMessage ? (
-          <div className="mb-6 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        {userRole ? (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[430px_1fr]">
-            <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4">
-                <div className="text-[17px] font-extrabold text-[#263142]">문의 목록</div>
-                <div className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
-                  총 {items.length}건
-                </div>
-              </div>
-
-              <div className="p-4">
-                {items.length === 0 ? (
-                  <div className="rounded-[16px] border border-dashed border-[#d9e0ea] bg-[#fbfcfe] px-5 py-10 text-center text-[14px] text-[#98a2b3]">
-                    {isAdmin ? '등록된 문의가 없습니다.' : '내 계정으로 등록한 문의가 없습니다.'}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {items.map((item) => {
-                      const selected = item.id === selectedId
-
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedId(item.id)}
-                          className={classNames(
-                            'w-full rounded-[16px] border px-4 py-4 text-left transition',
-                            selected
-                              ? 'border-[#9db7ff] bg-[#f5f9ff]'
-                              : 'border-[#e4e8ef] bg-white hover:bg-[#fbfcfe]'
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="truncate text-[14px] font-bold text-[#344054]">
-                              {item.title || '-'}
-                            </div>
-                            <StatusBadge status={item.status} />
-                          </div>
-
-                          <div className="mt-2 text-[12px] font-semibold text-[#98a2b3]">
-                            {item.clinic_name || item.login_id || '-'} · {item.category || '일반 문의'}
-                          </div>
-
-                          <div className="mt-1 text-[12px] text-[#98a2b3]">
-                            {formatDateTime(item.created_at)}
-                          </div>
-
-                          <div className="mt-2 line-clamp-2 text-[13px] leading-6 text-[#667085]">
-                            {item.content || '-'}
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-                <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                  문의 상세
-                </div>
-
-                <div className="p-6">
-                  {!selectedItem ? (
-                    <div className="rounded-[16px] border border-dashed border-[#d9e0ea] bg-[#fbfcfe] px-5 py-10 text-center text-[14px] text-[#98a2b3]">
-                      문의를 선택해주세요.
-                    </div>
-                  ) : (
-                    <div className="space-y-5">
-                      <div className="rounded-[16px] border border-[#e4e8ef] bg-[#f9fbfd] p-5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[20px] font-extrabold text-[#1f2937]">
-                            {selectedItem.title || '-'}
-                          </div>
-                          <StatusBadge status={selectedItem.status} />
-                        </div>
-
-                        <div className="mt-3 text-[13px] font-semibold text-[#98a2b3]">
-                          {selectedItem.category || '일반 문의'} ·{' '}
-                          {formatDateTime(selectedItem.created_at)}
-                        </div>
-
-                        <div className="mt-5 whitespace-pre-wrap text-[14px] leading-7 text-[#344054]">
-                          {selectedItem.content || '-'}
-                        </div>
-                      </div>
-
-                      {isAdmin ? (
-                        <div className="rounded-[16px] border border-[#e4e8ef] bg-white p-5">
-                          <div className="mb-3 text-[16px] font-extrabold text-[#263142]">
-                            치과 정보
-                          </div>
-
-                          <div className="space-y-2 text-[14px] text-[#344054]">
-                            <div>
-                              <span className="font-bold text-[#98a2b3]">치과명:</span>{' '}
-                              {selectedItem.clinic_name || '-'}
-                            </div>
-
-                            <div>
-                              <span className="font-bold text-[#98a2b3]">로그인 ID:</span>{' '}
-                              {selectedItem.login_id || '-'}
-                            </div>
-
-                            <div>
-                              <span className="font-bold text-[#98a2b3]">연락처:</span>{' '}
-                              {selectedItem.clinic_phone || '-'}
-                            </div>
-
-                            <div className="whitespace-pre-wrap break-all">
-                              <span className="font-bold text-[#98a2b3]">주소:</span>{' '}
-                              {selectedItem.clinic_address || '-'}
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div
-                        className={classNames(
-                          'rounded-[16px] border p-5',
-                          selectedItem.admin_reply
-                            ? 'border-emerald-100 bg-emerald-50'
-                            : 'border-[#e4e8ef] bg-white'
-                        )}
-                      >
-                        <div
-                          className={classNames(
-                            'mb-3 text-[16px] font-extrabold',
-                            selectedItem.admin_reply ? 'text-emerald-800' : 'text-[#263142]'
-                          )}
-                        >
-                          관리자 답변
-                        </div>
-
-                        {selectedItem.admin_reply ? (
-                          <>
-                            <div className="whitespace-pre-wrap text-[14px] leading-7 text-emerald-900">
-                              {selectedItem.admin_reply}
-                            </div>
-                            {selectedItem.replied_at ? (
-                              <div className="mt-3 text-[12px] font-semibold text-emerald-700">
-                                답변일: {formatDateTime(selectedItem.replied_at)}
-                              </div>
-                            ) : null}
-                          </>
-                        ) : (
-                          <div className="text-[14px] font-semibold text-[#98a2b3]">
-                            아직 등록된 답변이 없습니다.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {isAdmin ? (
-                <div className="overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-                  <div className="border-b border-[#e9edf4] bg-[#f7f9fc] px-6 py-4 text-[17px] font-extrabold text-[#263142]">
-                    답변 작성
-                  </div>
-
-                  <form onSubmit={handleReplySubmit} className="p-6">
-                    <textarea
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="문의에 대한 답변을 입력해주세요."
-                      className="min-h-[220px] w-full resize-none rounded-[14px] border border-[#d6dde8] bg-white p-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]"
-                    />
-
-                    {selectedItem?.replied_at ? (
-                      <div className="mt-3 text-[12px] font-semibold text-[#98a2b3]">
-                        마지막 답변 저장: {formatDateTime(selectedItem.replied_at)}
-                      </div>
-                    ) : null}
-
-                    <div className="mt-5 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={submitting || !selectedItem}
-                        className="rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {submitting ? '저장 중...' : '답변 저장'}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-[28px] border border-red-100 bg-white p-10 text-center shadow-sm">
-            <div className="text-[18px] font-black text-red-600">
-              문의내역을 불러오지 못했습니다.
-            </div>
-
-            <div className="mt-3 text-[14px] font-semibold text-[#667085]">
-              잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.
-            </div>
-
-            <button
-              type="button"
-              onClick={loadData}
-              className="mt-6 rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white"
-            >
-              다시 시도
-            </button>
-          </div>
-        )}
       </div>
     </main>
   )

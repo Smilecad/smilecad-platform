@@ -12,7 +12,6 @@ export default function AppTopNav({ current }: { current?: string }) {
     { name: '주문 접수', path: '/orders/new', id: 'orders-new' },
     { name: '명세서', path: '/billing', id: 'billing' },
     { name: '문의하기', path: '/inquiry', id: 'inquiry' },
-    { name: '문의내역', path: '/inquiries', id: 'inquiries' },
   ]
 
   const handleLogout = () => {
