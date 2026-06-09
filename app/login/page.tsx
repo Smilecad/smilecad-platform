@@ -598,6 +598,14 @@ export default function LoginPage() {
                   >
                     {loading ? '로그인 중...' : '로그인'}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => router.push('/forgot-password')}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                  >
+                    비밀번호를 잊으셨나요?
+                  </button>
                 </form>
               ) : (
                 <form onSubmit={handleSignup} className="mt-8 space-y-5">
