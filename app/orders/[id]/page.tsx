@@ -237,17 +237,114 @@ function normalizeGender(value?: string | null) {
   return String(value)
 }
 
-function getAgeFromBirth(value?: string | null) {
+function extractDateKey(value?: string | null) {
   if (!value) return ''
 
-  const date = new Date(value)
+  const text = String(value).trim()
+
+  const directMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`
+  }
+
+  const date = new Date(text)
   if (Number.isNaN(date.getTime())) return ''
 
-  const today = new Date()
-  let age = today.getFullYear() - date.getFullYear()
-  const monthDiff = today.getMonth() - date.getMonth()
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
 
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+  return formatter.format(date)
+}
+
+function extractTimeKey(value?: string | null) {
+  if (!value) return ''
+
+  const text = String(value).trim()
+
+  const directMatch = text.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (directMatch) {
+    return `${directMatch[1]}:${directMatch[2]}:${directMatch[3] || '00'}`
+  }
+
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+
+  return formatter.format(date)
+}
+
+function formatDate(value?: string | null) {
+  const dateKey = extractDateKey(value)
+
+  if (!dateKey) return '-'
+
+  const [year, month, day] = dateKey.split('-')
+
+  return `${Number(year)}. ${Number(month)}. ${Number(day)}.`
+}
+
+function formatDateTime(value?: string | null) {
+  const dateKey = extractDateKey(value)
+  const timeKey = extractTimeKey(value)
+
+  if (!dateKey) return '-'
+
+  const [year, month, day] = dateKey.split('-')
+
+  if (!timeKey) {
+    return `${Number(year)}. ${Number(month)}. ${Number(day)}.`
+  }
+
+  return `${Number(year)}. ${Number(month)}. ${Number(day)}. ${timeKey}`
+}
+
+function getOrderCreatedDateTime(order: any) {
+  return formatDateTime(
+    order?.created_at_kst ||
+      order?.created_at
+  )
+}
+
+function getOrderUpdatedDateTime(order: any) {
+  return formatDateTime(
+    order?.updated_at_kst ||
+      order?.updated_at
+  )
+}
+
+function getHistoryChangedDateTime(item: any) {
+  return formatDateTime(
+    item?.changed_at_kst ||
+      item?.created_at_kst ||
+      item?.changed_at ||
+      item?.created_at ||
+      item?.updated_at
+  )
+}
+
+function getAgeFromBirth(value?: string | null) {
+  const dateKey = extractDateKey(value)
+  if (!dateKey) return ''
+
+  const [year, month, day] = dateKey.split('-').map(Number)
+  if (!year || !month || !day) return ''
+
+  const today = new Date()
+  let age = today.getFullYear() - year
+  const monthDiff = today.getMonth() + 1 - month
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
     age -= 1
   }
 
@@ -607,24 +704,6 @@ export default function OrderDetailPage() {
     }
   }, [order])
 
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return '-'
-
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return '-'
-
-    return date.toLocaleString('ko-KR')
-  }
-
-  const formatDate = (value?: string | null) => {
-    if (!value) return '-'
-
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return '-'
-
-    return date.toLocaleDateString('ko-KR')
-  }
-
   const gender = normalizeGender(order?.patient_gender)
   const age = getAgeFromBirth(order?.patient_birth)
   const patientMeta = [gender, age].filter(Boolean).join(' / ')
@@ -638,7 +717,7 @@ export default function OrderDetailPage() {
 
     const baseStep = {
       label: '주문 접수',
-      time: formatDateTime(order?.created_at),
+      time: getOrderCreatedDateTime(order),
       active: rawHistory.length === 0,
       done: true,
       memo: '주문이 접수되었습니다.',
@@ -648,13 +727,12 @@ export default function OrderDetailPage() {
     const normalizedHistory = rawHistory
       .map((item: any) => {
         const status = item.new_status || item.status || item.order_status || ''
-        const time = item.changed_at || item.created_at || item.updated_at || ''
         const previousStatus = item.old_status || ''
         const changedBy = item.changed_by || ''
 
         return {
           label: String(status || '').trim(),
-          time: formatDateTime(time),
+          time: getHistoryChangedDateTime(item),
           active: String(status || '').trim() === String(order?.status || '').trim(),
           done: true,
           memo: previousStatus ? `${previousStatus} → ${status}` : '',
@@ -671,7 +749,7 @@ export default function OrderDetailPage() {
           baseStep,
           {
             label: currentStatus,
-            time: formatDateTime(order?.updated_at || order?.created_at),
+            time: getOrderUpdatedDateTime(order) || getOrderCreatedDateTime(order),
             active: true,
             done: true,
             memo: '현재 주문 상태입니다.',
@@ -817,7 +895,7 @@ export default function OrderDetailPage() {
               </div>
               <p className="mt-5 text-[14px] font-bold text-slate-500">
                 주문 생성일{' '}
-                <span className="ml-2 text-slate-700">{formatDateTime(order.created_at)}</span>
+                <span className="ml-2 text-slate-700">{getOrderCreatedDateTime(order)}</span>
               </p>
             </div>
           </div>
@@ -910,7 +988,7 @@ export default function OrderDetailPage() {
                   { label: '환자명', value: order.patient_name },
                   { label: '희망 완료일', value: formatDate(order.delivery_date) },
                   { label: '치과명', value: order.clinic_name },
-                  { label: '주문 생성일', value: formatDateTime(order.created_at) },
+                  { label: '주문 생성일', value: getOrderCreatedDateTime(order) },
                 ].map((item) => (
                   <div key={item.label} className="px-0 py-5 md:px-7">
                     <p className="text-[13px] font-bold text-slate-500">{item.label}</p>
