@@ -23,7 +23,16 @@ type OrderItem = {
   product_type?: string | null
   delivery_date?: string | null
   clinic_name?: string | null
+
   created_at?: string | null
+  created_at_kst?: string | null
+  created_date_kst?: string | null
+  created_time_kst?: string | null
+
+  updated_at?: string | null
+  updated_at_kst?: string | null
+  updated_date_kst?: string | null
+  updated_time_kst?: string | null
 }
 
 const STATUS_TABS: OrderStatus[] = [
@@ -120,6 +129,55 @@ function statusBadgeClass(status?: string | null) {
   return 'border-blue-200 bg-blue-50 text-blue-700'
 }
 
+function extractDateKey(value?: string | null) {
+  if (!value) return ''
+
+  const text = String(value).trim()
+
+  const directMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`
+  }
+
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+
+  return formatter.format(date)
+}
+
+function getOrderCreatedDateKey(order: OrderItem) {
+  return (
+    extractDateKey(order.created_date_kst) ||
+    extractDateKey(order.created_at_kst) ||
+    extractDateKey(order.created_at)
+  )
+}
+
+function formatDate(value?: string | null) {
+  const dateKey = extractDateKey(value)
+
+  if (!dateKey) return '-'
+
+  const [year, month, day] = dateKey.split('-')
+
+  return `${Number(year)}. ${Number(month)}. ${Number(day)}.`
+}
+
+function formatOrderCreatedDate(order: OrderItem) {
+  return formatDate(
+    order.created_date_kst ||
+      order.created_at_kst ||
+      order.created_at
+  )
+}
+
 export default function OrdersPage() {
   const router = useRouter()
 
@@ -210,25 +268,20 @@ export default function OrdersPage() {
     return orders.filter((order) => {
       const matchStatus = selectedStatus === '전체' || order.status === selectedStatus
 
-      const orderDate = order.created_at ? new Date(order.created_at) : null
-      if (!orderDate || Number.isNaN(orderDate.getTime())) {
+      const orderDateKey = getOrderCreatedDateKey(order)
+
+      if (!orderDateKey) {
         return matchStatus
       }
 
-      orderDate.setHours(0, 0, 0, 0)
-
       let matchStartDate = true
       if (startDate) {
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
-        matchStartDate = orderDate >= start
+        matchStartDate = orderDateKey >= startDate
       }
 
       let matchEndDate = true
       if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        matchEndDate = orderDate <= end
+        matchEndDate = orderDateKey <= endDate
       }
 
       return matchStatus && matchStartDate && matchEndDate
@@ -238,13 +291,6 @@ export default function OrdersPage() {
   const resetDateFilter = () => {
     setStartDate('')
     setEndDate('')
-  }
-
-  const formatDate = (value?: string | null) => {
-    if (!value) return '-'
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return '-'
-    return date.toLocaleDateString('ko-KR')
   }
 
   if (loading) {
@@ -451,7 +497,7 @@ export default function OrdersPage() {
 
                     <div className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-[#eef2f6] pt-3 lg:w-auto lg:flex-col lg:items-end lg:border-t-0 lg:pt-0">
                       <span className="text-[11px] font-bold text-[#98a2b3]">
-                        접수일: {formatDate(order.created_at)}
+                        접수일: {formatOrderCreatedDate(order)}
                       </span>
 
                       <button
