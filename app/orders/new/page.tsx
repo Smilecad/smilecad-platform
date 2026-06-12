@@ -67,7 +67,7 @@ const UPPER_TOOTH_SET = new Set([...PERMANENT_TOP, ...PRIMARY_TOP].map(toToothKe
 const LOWER_TOOTH_SET = new Set([...PERMANENT_BOTTOM, ...PRIMARY_BOTTOM].map(toToothKey))
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024
-const MAX_FILE_COUNT = 5
+const MAX_FILE_COUNT = 10
 
 const BASE_TOOTH_COUNT = 6
 const NT_TAINER_BASE_PRICE = 35000
@@ -155,13 +155,56 @@ function getToothRange(startTooth: string, endTooth: string) {
   return [startTooth, endTooth]
 }
 
-function getJigUnitCount(selectedTeeth: string[]) {
-  const hasUpper = selectedTeeth.some((tooth) => UPPER_TOOTH_SET.has(tooth))
-  const hasLower = selectedTeeth.some((tooth) => LOWER_TOOTH_SET.has(tooth))
+function getJigUnitCount(teeth: string[]) {
+  const hasUpper = teeth.some((tooth) => UPPER_TOOTH_SET.has(String(tooth)))
+  const hasLower = teeth.some((tooth) => LOWER_TOOTH_SET.has(String(tooth)))
 
   if (hasUpper && hasLower) return 2
   if (hasUpper || hasLower) return 1
   return 0
+}
+
+function getArchCounts(teeth: string[]) {
+  let upperCount = 0
+  let lowerCount = 0
+
+  for (const tooth of teeth) {
+    const key = String(tooth)
+
+    if (UPPER_TOOTH_SET.has(key)) {
+      upperCount += 1
+    } else if (LOWER_TOOTH_SET.has(key)) {
+      lowerCount += 1
+    }
+  }
+
+  return {
+    upperCount,
+    lowerCount,
+  }
+}
+
+function calculateNtTainerArchPrice(count: number) {
+  if (count <= 0) return 0
+
+  return Math.max(
+    0,
+    NT_TAINER_BASE_PRICE + (count - BASE_TOOTH_COUNT) * NT_TAINER_TOOTH_UNIT_PRICE
+  )
+}
+
+function calculateNtTainerArchAdjustment(count: number) {
+  if (count <= 0) return 0
+  return (count - BASE_TOOTH_COUNT) * NT_TAINER_TOOTH_UNIT_PRICE
+}
+
+function getBillableTeeth(selectedTeeth: string[], missingTeeth: string[]) {
+  return selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+}
+
+function calculateJigPrice(teeth: string[], jigRequired: string) {
+  if (jigRequired !== 'Yes') return 0
+  return getJigUnitCount(teeth) * JIG_PRICE
 }
 
 function calculatePrice(
@@ -170,12 +213,11 @@ function calculatePrice(
   missingTeeth: string[],
   jigRequired: string
 ): PriceInfo {
-  const billableTeeth = selectedTeeth.filter((tooth) => !missingTeeth.includes(tooth))
+  const billableTeeth = getBillableTeeth(selectedTeeth, missingTeeth)
   const toothCount = billableTeeth.length
   const selectedToothCount = selectedTeeth.length
   const missingToothCount = missingTeeth.length
-  const jigUnitCount = jigRequired === 'Yes' ? getJigUnitCount(selectedTeeth) : 0
-  const jigPrice = jigUnitCount * JIG_PRICE
+  const jigPrice = calculateJigPrice(billableTeeth, jigRequired)
 
   if (!productType) {
     return {
@@ -191,9 +233,20 @@ function calculatePrice(
   }
 
   if (productType === 'NT-tainer') {
-    const toothAdjustmentPrice = (toothCount - BASE_TOOTH_COUNT) * NT_TAINER_TOOTH_UNIT_PRICE
-    const productBasePrice = NT_TAINER_BASE_PRICE
-    const productPrice = Math.max(0, productBasePrice + toothAdjustmentPrice)
+    const { upperCount, lowerCount } = getArchCounts(billableTeeth)
+
+    const upperPrice = calculateNtTainerArchPrice(upperCount)
+    const lowerPrice = calculateNtTainerArchPrice(lowerCount)
+
+    const upperBasePrice = upperCount > 0 ? NT_TAINER_BASE_PRICE : 0
+    const lowerBasePrice = lowerCount > 0 ? NT_TAINER_BASE_PRICE : 0
+
+    const upperAdjustmentPrice = calculateNtTainerArchAdjustment(upperCount)
+    const lowerAdjustmentPrice = calculateNtTainerArchAdjustment(lowerCount)
+
+    const productBasePrice = upperBasePrice + lowerBasePrice
+    const toothAdjustmentPrice = upperAdjustmentPrice + lowerAdjustmentPrice
+    const productPrice = upperPrice + lowerPrice
 
     return {
       toothCount,
@@ -203,9 +256,13 @@ function calculatePrice(
       toothAdjustmentPrice,
       jigPrice,
       totalPrice: productPrice + jigPrice,
-      priceDescription: `NT-tainer ${BASE_TOOTH_COUNT}개 기준 ${formatMoney(
+      priceDescription: `NT-tainer 악별 계산: 상악 ${upperCount}개 ${formatMoney(
+        upperPrice
+      )}, 하악 ${lowerCount}개 ${formatMoney(
+        lowerPrice
+      )}, 1악 ${BASE_TOOTH_COUNT}전치 기준 ${formatMoney(
         NT_TAINER_BASE_PRICE
-      )}, 실제 청구 치아 1개당 ±${formatMoney(NT_TAINER_TOOTH_UNIT_PRICE)}`,
+      )}, 치아 1개당 ±${formatMoney(NT_TAINER_TOOTH_UNIT_PRICE)}`,
     }
   }
 
@@ -1736,7 +1793,9 @@ export default function NewOrderPage() {
                     <div className="mb-2 text-[15px] font-semibold text-[#667085] sm:text-[16px]">
                       업로드할 파일을 선택해주세요.
                     </div>
-                    <div className="text-[12px] text-[#98a2b3]">파일당 최대 500MB / 최대 5개</div>
+                    <div className="text-[12px] text-[#98a2b3]">
+                      파일당 최대 500MB / 최대 {MAX_FILE_COUNT}개
+                    </div>
 
                     {files.length > 0 && (
                       <div className="mt-5 space-y-2 text-left">
@@ -1872,7 +1931,7 @@ export default function NewOrderPage() {
                         <span>
                           지그 제작
                           {jigRequired === 'Yes' && priceInfo.jigPrice > 0
-                            ? ` (${getJigUnitCount(selectedTeeth)}악)`
+                            ? ` (${getJigUnitCount(getBillableTeeth(selectedTeeth, missingTeeth))}악)`
                             : ''}
                         </span>
                         <span className="text-[#1f2937]">+{formatMoney(priceInfo.jigPrice)}</span>
@@ -2043,7 +2102,7 @@ export default function NewOrderPage() {
 
                     <div className="flex items-center justify-between gap-3">
                       <span>
-                        지그 제작 {jigRequired === 'Yes' ? `(${getJigUnitCount(selectedTeeth)}악)` : ''}
+                        지그 제작 {jigRequired === 'Yes' ? `(${getJigUnitCount(getBillableTeeth(selectedTeeth, missingTeeth))}악)` : ''}
                       </span>
                       <span className="text-[#111827]">+{formatMoney(priceInfo.jigPrice)}</span>
                     </div>
@@ -2061,7 +2120,7 @@ export default function NewOrderPage() {
                   <div className="mt-3 rounded-[12px] bg-[#f8fafc] p-3 text-[12px] font-semibold leading-5 text-[#667085]">
                     {priceInfo.priceDescription}
                     {jigRequired === 'Yes' && priceInfo.jigPrice > 0
-                      ? `, 지그 제작 ${getJigUnitCount(selectedTeeth)}악 ${formatMoney(priceInfo.jigPrice)} 추가`
+                      ? `, 지그 제작 ${getJigUnitCount(getBillableTeeth(selectedTeeth, missingTeeth))}악 ${formatMoney(priceInfo.jigPrice)} 추가`
                       : ', 지그 제작 없음'}
                   </div>
                 </div>
