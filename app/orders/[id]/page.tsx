@@ -396,6 +396,21 @@ function numberOrZero(value: any) {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
+function isRemakeOrder(order: any) {
+  const value =
+    order?.is_remake ??
+    order?.isRemake ??
+    order?.remake ??
+    order?.is_remake_order ??
+    order?.isRemakeOrder
+
+  if (value === true) return true
+
+  const text = String(value || '').trim().toLowerCase()
+
+  return text === 'true' || text === 'yes' || text === 'y' || text === '1'
+}
+
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -844,6 +859,13 @@ export default function OrderDetailPage() {
                   <h1 className="text-[36px] font-black leading-none tracking-[-0.04em] text-slate-950">
                     {order.patient_name || '-'}
                   </h1>
+
+                  {isRemakeOrder(order) && (
+                    <span className="mb-1 inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[13px] font-black tracking-[0.12em] text-red-600">
+                      REMAKE
+                    </span>
+                  )}
+
                   {patientMeta && (
                     <span className="mb-1 text-[15px] font-bold text-slate-500">
                       ({patientMeta})
@@ -1022,8 +1044,8 @@ export default function OrderDetailPage() {
                 </div>
 
                 <div className="px-0 py-5 md:px-7">
-                  <p className="text-[13px] font-bold text-slate-500">특이사항</p>
-                  <p className="mt-3 text-[16px] font-black text-slate-950">
+                  <p className="text-[13px] font-bold text-slate-500">요청사항</p>
+                  <p className="mt-3 whitespace-pre-wrap text-[16px] font-black leading-relaxed text-slate-950">
                     {order.request_note || '-'}
                   </p>
                 </div>
@@ -1229,11 +1251,30 @@ export default function OrderDetailPage() {
 
         <section className="grid grid-cols-1 gap-7 lg:grid-cols-2">
           <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-            <h2 className="mb-6 text-[22px] font-black tracking-[-0.03em] text-slate-950">
-              요청사항
-            </h2>
-            <div className="min-h-[120px] rounded-2xl border border-slate-100 bg-slate-50 p-6 text-[15px] font-semibold leading-relaxed text-slate-600">
-              {order.request_note || '없음'}
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                  디자인 확인서
+                </h2>
+                <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
+                  추후 디자인 확인서 이미지와 승인 / 수정 요청 기능이 표시될 영역입니다.
+                </p>
+              </div>
+
+              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[12px] font-black text-slate-500">
+                준비중
+              </span>
+            </div>
+
+            <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+              <div>
+                <p className="text-[15px] font-black text-slate-600">
+                  아직 등록된 디자인 확인서가 없습니다.
+                </p>
+                <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
+                  디자인 확인서 업로드 기능 연결 후 이 영역에 표시됩니다.
+                </p>
+              </div>
             </div>
           </div>
 
