@@ -30,6 +30,17 @@ const LIST_CONFIRMATIONS_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_CONFIRMATIONS_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-confirmations'
 
+const GET_DESIGN_CARD_UPLOAD_URL_API_URL =
+  process.env.NEXT_PUBLIC_NCP_GET_DESIGN_CARD_UPLOAD_URL_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-design-card-upload-url'
+
+const CREATE_CONFIRMATION_API_URL =
+  process.env.NEXT_PUBLIC_NCP_CREATE_CONFIRMATION_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-confirmation'
+
+const DESIGN_CARD_INTERNAL_API_KEY =
+  process.env.NEXT_PUBLIC_DESIGN_CARD_INTERNAL_API_KEY || ''
+
 const DEFAULT_DETAIL_ERROR =
   '주문 상세 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
 
@@ -38,6 +49,9 @@ const DEFAULT_STATUS_ERROR =
 
 const DEFAULT_DOWNLOAD_ERROR =
   '파일 다운로드 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+const DEFAULT_CONFIRMATION_SEND_ERROR =
+  '디자인 확인서 등록/발송 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
 
 type DesignConfirmation = {
   confirmation_id?: number
@@ -508,6 +522,10 @@ export default function OrderDetailPage() {
   const [confirmationLoading, setConfirmationLoading] = useState(false)
   const [confirmationError, setConfirmationError] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
+  const [designCardFile, setDesignCardFile] = useState<File | null>(null)
+  const [designCardPhone, setDesignCardPhone] = useState('')
+  const [sendingConfirmation, setSendingConfirmation] = useState(false)
+  const [sendConfirmationMessage, setSendConfirmationMessage] = useState('')
   const [error, setError] = useState('')
   const [userRole, setUserRole] = useState('clinic')
 
@@ -752,6 +770,166 @@ export default function OrderDetailPage() {
       const originalName = names[i] || `scan-file-${i + 1}.stl`
       await handleDownload(paths[i], originalName)
       await new Promise((resolve) => setTimeout(resolve, 700))
+    }
+  }
+
+  const handleDesignCardFileChange = (event: any) => {
+    const file = event.target.files?.[0] || null
+    setDesignCardFile(file)
+    setSendConfirmationMessage('')
+  }
+
+  const handleSendDesignConfirmation = async () => {
+    if (userRole !== 'admin') {
+      alert('관리자만 디자인 확인서를 등록/발송할 수 있습니다.')
+      return
+    }
+
+    const token = getTokenOrRedirect()
+    if (!token) return
+
+    if (!designCardFile) {
+      alert('디자인 확인서 이미지 파일을 선택해주세요.')
+      return
+    }
+
+    const cleanPhone = designCardPhone.replace(/[^0-9]/g, '')
+
+    if (!cleanPhone) {
+      alert('문자를 받을 휴대폰 번호를 입력해주세요.')
+      return
+    }
+
+    if (!GET_DESIGN_CARD_UPLOAD_URL_API_URL || !CREATE_CONFIRMATION_API_URL) {
+      alert('디자인 확인서 API 주소가 설정되지 않았습니다.')
+      return
+    }
+
+    if (!confirm('선택한 디자인 확인서 이미지를 업로드하고 치과에 확인 링크를 발송하시겠습니까?')) {
+      return
+    }
+
+    try {
+      setSendingConfirmation(true)
+      setConfirmationError('')
+      setSendConfirmationMessage('')
+
+      const uploadRes = await fetch(GET_DESIGN_CARD_UPLOAD_URL_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          ...(DESIGN_CARD_INTERNAL_API_KEY
+            ? { 'x-internal-api-key': DESIGN_CARD_INTERNAL_API_KEY }
+            : {}),
+        },
+        body: JSON.stringify({
+          authToken: token,
+          token,
+          internal_api_key: DESIGN_CARD_INTERNAL_API_KEY || undefined,
+          order_id: Number(id),
+          orderId: Number(id),
+          file_name: designCardFile.name,
+          fileName: designCardFile.name,
+          content_type: designCardFile.type || 'image/png',
+          contentType: designCardFile.type || 'image/png',
+        }),
+      })
+
+      if (handleAuthError(uploadRes.status)) return
+
+      const uploadData = await parseJsonResponse(uploadRes)
+
+      if (!uploadRes.ok || !uploadData?.success) {
+        console.error('get-design-card-upload-url 응답 오류:', uploadData)
+        throw new Error(uploadData?.error || DEFAULT_CONFIRMATION_SEND_ERROR)
+      }
+
+      const uploadUrl = uploadData.upload_url || uploadData.uploadUrl || uploadData.url
+      const imageObjectKey =
+        uploadData.image_object_key ||
+        uploadData.imageObjectKey ||
+        uploadData.object_key ||
+        uploadData.objectKey
+      const imageBucket =
+        uploadData.image_bucket ||
+        uploadData.imageBucket ||
+        uploadData.bucket ||
+        'smilecad-design-cards'
+
+      if (!uploadUrl || !imageObjectKey) {
+        throw new Error('디자인 확인서 업로드 URL 또는 파일 키를 확인할 수 없습니다.')
+      }
+
+      const requiredHeaders = uploadData.required_headers || uploadData.requiredHeaders || {}
+      const putHeaders: Record<string, string> = {
+        'Content-Type': designCardFile.type || 'image/png',
+        'x-amz-content-sha256': 'UNSIGNED-PAYLOAD',
+      }
+
+      Object.entries(requiredHeaders).forEach(([key, value]) => {
+        if (typeof value === 'string' && value) {
+          putHeaders[key] = value
+        }
+      })
+
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: putHeaders,
+        body: designCardFile,
+      })
+
+      if (!putRes.ok) {
+        console.error('디자인 확인서 이미지 업로드 실패:', putRes.status)
+        throw new Error('디자인 확인서 이미지 업로드에 실패했습니다.')
+      }
+
+      const createRes = await fetch(CREATE_CONFIRMATION_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          authToken: token,
+          token,
+          order_id: Number(id),
+          orderId: Number(id),
+          image_object_key: imageObjectKey,
+          imageObjectKey,
+          image_bucket: imageBucket,
+          imageBucket,
+          clinic_name: order?.clinic_name || '',
+          clinicName: order?.clinic_name || '',
+          patient_name: order?.patient_name || '',
+          patientName: order?.patient_name || '',
+          phone_number: cleanPhone,
+          phoneNumber: cleanPhone,
+        }),
+      })
+
+      if (handleAuthError(createRes.status)) return
+
+      const createData = await parseJsonResponse(createRes)
+
+      if (!createRes.ok || !createData?.success) {
+        console.error('create-confirmation 응답 오류:', createData)
+        throw new Error(createData?.error || DEFAULT_CONFIRMATION_SEND_ERROR)
+      }
+
+      setDesignCardFile(null)
+      setDesignCardPhone('')
+      setSendConfirmationMessage('디자인 확인서가 등록되고 확인 링크가 발송되었습니다.')
+
+      const input = document.getElementById('design-card-file-input') as HTMLInputElement | null
+      if (input) input.value = ''
+
+      await fetchConfirmations(token)
+    } catch (err) {
+      console.error('디자인 확인서 등록/발송 실패:', err)
+      alert(toSafeUserMessage(err, DEFAULT_CONFIRMATION_SEND_ERROR))
+    } finally {
+      setSendingConfirmation(false)
     }
   }
 
@@ -1400,7 +1578,7 @@ export default function OrderDetailPage() {
                   디자인 확인서
                 </h2>
                 <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
-                  치과 확인 링크 발송 이력과 응답 상태를 확인할 수 있습니다.
+                  치과에 발송한 디자인 확인서와 응답 상태를 확인할 수 있습니다.
                 </p>
               </div>
 
@@ -1408,6 +1586,72 @@ export default function OrderDetailPage() {
                 {confirmations.length}건
               </span>
             </div>
+
+            {userRole === 'admin' && (
+              <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-5">
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="text-[15px] font-black text-slate-900">
+                      디자인 확인서 등록/발송
+                    </p>
+                    <p className="mt-1 text-[12px] font-semibold leading-5 text-slate-500">
+                      이미지 파일을 업로드하면 치과에 확인 링크가 문자로 발송됩니다.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <label className="block">
+                      <span className="mb-2 block text-[12px] font-black text-slate-500">
+                        확인서 이미지
+                      </span>
+                      <input
+                        id="design-card-file-input"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleDesignCardFileChange}
+                        disabled={sendingConfirmation}
+                        className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-bold text-slate-600 file:mr-4 file:rounded-xl file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-[13px] file:font-black file:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-[12px] font-black text-slate-500">
+                        문자 수신 휴대폰 번호
+                      </span>
+                      <input
+                        type="tel"
+                        value={designCardPhone}
+                        onChange={(event) => setDesignCardPhone(event.target.value)}
+                        placeholder="01012345678"
+                        disabled={sendingConfirmation}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[14px] font-bold text-slate-700 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleSendDesignConfirmation}
+                      disabled={sendingConfirmation}
+                      className="rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-black text-white shadow-lg shadow-blue-100 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {sendingConfirmation ? '등록/발송 중...' : '디자인 확인서 등록/발송'}
+                    </button>
+                  </div>
+
+                  {designCardFile && (
+                    <p className="text-[12px] font-bold text-slate-500">
+                      선택 파일: {designCardFile.name}
+                    </p>
+                  )}
+
+                  {sendConfirmationMessage && (
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] font-black text-emerald-700">
+                      {sendConfirmationMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {confirmationLoading ? (
               <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center">
