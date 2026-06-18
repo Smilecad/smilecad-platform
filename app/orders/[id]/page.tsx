@@ -26,6 +26,10 @@ const GET_DOWNLOAD_URL_API_URL =
   process.env.NEXT_PUBLIC_NCP_GET_DOWNLOAD_URL_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-download-url'
 
+const LIST_CONFIRMATIONS_API_URL =
+  process.env.NEXT_PUBLIC_NCP_LIST_CONFIRMATIONS_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-confirmations'
+
 const DEFAULT_DETAIL_ERROR =
   '주문 상세 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
 
@@ -34,6 +38,36 @@ const DEFAULT_STATUS_ERROR =
 
 const DEFAULT_DOWNLOAD_ERROR =
   '파일 다운로드 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
+
+type DesignConfirmation = {
+  confirmation_id?: number
+  confirmationId?: number
+  order_id?: number
+  orderId?: number
+  image_object_key?: string | null
+  imageObjectKey?: string | null
+  image_bucket?: string | null
+  imageBucket?: string | null
+  clinic_name?: string | null
+  clinicName?: string | null
+  patient_name?: string | null
+  patientName?: string | null
+  status?: string | null
+  status_label?: string | null
+  statusLabel?: string | null
+  revision_note?: string | null
+  revisionNote?: string | null
+  created_at?: string | null
+  createdAt?: string | null
+  responded_at?: string | null
+  respondedAt?: string | null
+  expires_at?: string | null
+  expiresAt?: string | null
+  confirm_url?: string | null
+  confirmUrl?: string | null
+  is_expired?: boolean
+  isExpired?: boolean
+}
 
 function isTechnicalErrorMessage(message: string) {
   const value = message.toLowerCase()
@@ -369,6 +403,56 @@ function statusStyle(status?: string | null) {
   return 'border-blue-100 bg-blue-50 text-blue-700'
 }
 
+function confirmationStatusStyle(status?: string | null) {
+  const value = String(status || '').trim()
+
+  if (value === 'confirmed') {
+    return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value === 'revision_requested') {
+    return 'border-orange-100 bg-orange-50 text-orange-700'
+  }
+
+  if (value === 'pending') {
+    return 'border-blue-100 bg-blue-50 text-blue-700'
+  }
+
+  return 'border-slate-100 bg-slate-50 text-slate-600'
+}
+
+function getConfirmationStatusLabel(item: DesignConfirmation) {
+  return item.status_label || item.statusLabel || item.status || '-'
+}
+
+function getConfirmationId(item: DesignConfirmation) {
+  return item.confirmation_id || item.confirmationId || 0
+}
+
+function getConfirmationCreatedAt(item: DesignConfirmation) {
+  return item.created_at || item.createdAt || null
+}
+
+function getConfirmationRespondedAt(item: DesignConfirmation) {
+  return item.responded_at || item.respondedAt || null
+}
+
+function getConfirmationExpiresAt(item: DesignConfirmation) {
+  return item.expires_at || item.expiresAt || null
+}
+
+function getConfirmationRevisionNote(item: DesignConfirmation) {
+  return item.revision_note || item.revisionNote || ''
+}
+
+function getConfirmationUrl(item: DesignConfirmation) {
+  return item.confirm_url || item.confirmUrl || ''
+}
+
+function isConfirmationExpired(item: DesignConfirmation) {
+  return Boolean(item.is_expired ?? item.isExpired)
+}
+
 function formatMoney(value?: number | string | null) {
   const numeric = Number(value || 0)
 
@@ -420,6 +504,10 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [confirmations, setConfirmations] = useState<DesignConfirmation[]>([])
+  const [confirmationLoading, setConfirmationLoading] = useState(false)
+  const [confirmationError, setConfirmationError] = useState('')
+  const [copyMessage, setCopyMessage] = useState('')
   const [error, setError] = useState('')
   const [userRole, setUserRole] = useState('clinic')
 
@@ -458,6 +546,48 @@ export default function OrderDetailPage() {
     [router]
   )
 
+  const fetchConfirmations = useCallback(
+    async (token: string) => {
+      if (!id || !LIST_CONFIRMATIONS_API_URL) return
+
+      try {
+        setConfirmationLoading(true)
+        setConfirmationError('')
+
+        const res = await fetch(LIST_CONFIRMATIONS_API_URL, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            order_id: Number(id),
+          }),
+        })
+
+        if (handleAuthError(res.status)) return
+
+        const data = await parseJsonResponse(res)
+
+        if (!res.ok || !data?.success) {
+          console.error('list-confirmations 응답 오류:', data)
+          throw new Error(data?.error || '디자인 확인서 목록을 불러오지 못했습니다.')
+        }
+
+        setConfirmations(Array.isArray(data.confirmations) ? data.confirmations : [])
+      } catch (err) {
+        console.error('디자인 확인서 목록 조회 실패:', err)
+        setConfirmationError(
+          toSafeUserMessage(err, '디자인 확인서 목록을 불러오지 못했습니다.')
+        )
+      } finally {
+        setConfirmationLoading(false)
+      }
+    },
+    [id, handleAuthError]
+  )
+
   const fetchOrderDetail = useCallback(async () => {
     if (!id) return
 
@@ -487,13 +617,14 @@ export default function OrderDetailPage() {
 
       setOrder(data.order || null)
       setUserRole(data.role || 'clinic')
+      await fetchConfirmations(token)
     } catch (err) {
       console.error('주문 상세 조회 실패:', err)
       setError(toSafeUserMessage(err, DEFAULT_DETAIL_ERROR))
     } finally {
       setLoading(false)
     }
-  }, [id, getTokenOrRedirect, handleAuthError])
+  }, [id, getTokenOrRedirect, handleAuthError, fetchConfirmations])
 
   useEffect(() => {
     fetchOrderDetail()
@@ -621,6 +752,18 @@ export default function OrderDetailPage() {
       const originalName = names[i] || `scan-file-${i + 1}.stl`
       await handleDownload(paths[i], originalName)
       await new Promise((resolve) => setTimeout(resolve, 700))
+    }
+  }
+
+  const handleCopyConfirmationUrl = async (url: string) => {
+    if (!url) return
+
+    try {
+      await navigator.clipboard?.writeText(url)
+      setCopyMessage('확인 링크를 복사했습니다.')
+      window.setTimeout(() => setCopyMessage(''), 1800)
+    } catch (_) {
+      alert('링크 복사에 실패했습니다.')
     }
   }
 
@@ -1257,25 +1400,131 @@ export default function OrderDetailPage() {
                   디자인 확인서
                 </h2>
                 <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
-                  추후 디자인 확인서 이미지와 승인 / 수정 요청 기능이 표시될 영역입니다.
+                  치과 확인 링크 발송 이력과 응답 상태를 확인할 수 있습니다.
                 </p>
               </div>
 
-              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[12px] font-black text-slate-500">
-                준비중
+              <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-[12px] font-black text-blue-600">
+                {confirmations.length}건
               </span>
             </div>
 
-            <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-              <div>
-                <p className="text-[15px] font-black text-slate-600">
-                  아직 등록된 디자인 확인서가 없습니다.
-                </p>
-                <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
-                  디자인 확인서 업로드 기능 연결 후 이 영역에 표시됩니다.
+            {confirmationLoading ? (
+              <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 p-6 text-center">
+                <p className="text-[14px] font-bold text-slate-400">
+                  디자인 확인서 목록을 불러오는 중입니다.
                 </p>
               </div>
-            </div>
+            ) : confirmationError ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-[14px] font-bold text-red-600">
+                {confirmationError}
+              </div>
+            ) : confirmations.length > 0 ? (
+              <div className="space-y-3">
+                {copyMessage && (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[13px] font-black text-emerald-700">
+                    {copyMessage}
+                  </div>
+                )}
+
+                {confirmations.map((confirmation) => {
+                  const confirmationId = getConfirmationId(confirmation)
+                  const confirmUrl = getConfirmationUrl(confirmation)
+                  const revisionNote = getConfirmationRevisionNote(confirmation)
+
+                  return (
+                    <div
+                      key={confirmationId || confirmUrl}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-blue-200 hover:bg-blue-50/20"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-black ${confirmationStatusStyle(
+                                confirmation.status
+                              )}`}
+                            >
+                              {getConfirmationStatusLabel(confirmation)}
+                            </span>
+
+                            {isConfirmationExpired(confirmation) && (
+                              <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[12px] font-black text-slate-500">
+                                링크 만료
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="mt-3 text-[15px] font-black text-slate-900">
+                            디자인 확인서 #{confirmationId || '-'}
+                          </p>
+                        </div>
+
+                        {confirmUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyConfirmationUrl(confirmUrl)}
+                            className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-black text-blue-600 transition hover:border-blue-200 hover:bg-blue-50"
+                          >
+                            확인 링크 복사
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 text-[13px] font-bold md:grid-cols-2">
+                        <div className="rounded-2xl bg-slate-50 p-4">
+                          <p className="text-slate-400">등록일</p>
+                          <p className="mt-1 text-slate-700">
+                            {formatDateTime(getConfirmationCreatedAt(confirmation))}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-slate-50 p-4">
+                          <p className="text-slate-400">응답일</p>
+                          <p className="mt-1 text-slate-700">
+                            {formatDateTime(getConfirmationRespondedAt(confirmation))}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-slate-50 p-4">
+                          <p className="text-slate-400">만료일</p>
+                          <p className="mt-1 text-slate-700">
+                            {formatDateTime(getConfirmationExpiresAt(confirmation))}
+                          </p>
+                        </div>
+
+                        <div className="rounded-2xl bg-slate-50 p-4">
+                          <p className="text-slate-400">환자명</p>
+                          <p className="mt-1 text-slate-700">
+                            {confirmation.patient_name || confirmation.patientName || '-'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {revisionNote && (
+                        <div className="mt-4 rounded-2xl border border-orange-100 bg-orange-50 p-4">
+                          <p className="text-[13px] font-black text-orange-700">수정 요청 내용</p>
+                          <p className="mt-2 whitespace-pre-wrap text-[14px] font-bold leading-6 text-orange-900">
+                            {revisionNote}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                <div>
+                  <p className="text-[15px] font-black text-slate-600">
+                    아직 등록된 디자인 확인서가 없습니다.
+                  </p>
+                  <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
+                    디자인 확인서 발송 후 이 영역에 상태가 표시됩니다.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
