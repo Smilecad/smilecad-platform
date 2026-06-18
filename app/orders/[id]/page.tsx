@@ -494,6 +494,52 @@ function numberOrZero(value: any) {
   return Number.isFinite(numeric) ? numeric : 0
 }
 
+
+function normalizePhoneNumber(value?: string | null) {
+  const raw = String(value || '').trim()
+
+  if (!raw) return ''
+
+  let digits = raw.replace(/[^0-9]/g, '')
+
+  if (digits.startsWith('8210')) {
+    digits = `0${digits.slice(2)}`
+  }
+
+  return digits
+}
+
+function getDefaultDesignCardPhone(order: any) {
+  const candidates = [
+    order?.clinic_phone,
+    order?.clinicPhone,
+    order?.clinic_mobile,
+    order?.clinicMobile,
+    order?.phone_number,
+    order?.phoneNumber,
+    order?.mobile_phone,
+    order?.mobilePhone,
+    order?.user_phone,
+    order?.userPhone,
+    order?.user_mobile,
+    order?.userMobile,
+    order?.contact_phone,
+    order?.contactPhone,
+    order?.manager_phone,
+    order?.managerPhone,
+    order?.representative_phone,
+    order?.representativePhone,
+  ]
+
+  for (const candidate of candidates) {
+    const phone = normalizePhoneNumber(candidate)
+
+    if (phone) return phone
+  }
+
+  return ''
+}
+
 function isRemakeOrder(order: any) {
   const value =
     order?.is_remake ??
@@ -647,6 +693,17 @@ export default function OrderDetailPage() {
   useEffect(() => {
     fetchOrderDetail()
   }, [fetchOrderDetail])
+
+  useEffect(() => {
+    if (!order) return
+    if (designCardPhone.trim()) return
+
+    const defaultPhone = getDefaultDesignCardPhone(order)
+
+    if (defaultPhone) {
+      setDesignCardPhone(defaultPhone)
+    }
+  }, [order, designCardPhone])
 
   const handleStatusUpdate = async (newStatus: string) => {
     if (!id) return
@@ -1626,6 +1683,11 @@ export default function OrderDetailPage() {
                         disabled={sendingConfirmation}
                         className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[14px] font-bold text-slate-700 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
                       />
+                      <span className="mt-2 block text-[12px] font-semibold leading-5 text-slate-400">
+                        {getDefaultDesignCardPhone(order)
+                          ? '치과 계정 가입 번호가 자동 입력됩니다. 필요하면 직접 수정할 수 있습니다.'
+                          : '치과 계정 가입 번호가 없으면 직접 입력해 주세요.'}
+                      </span>
                     </label>
 
                     <button
