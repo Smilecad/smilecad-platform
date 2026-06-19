@@ -511,6 +511,8 @@ function normalizePhoneNumber(value?: string | null) {
 
 function getDefaultDesignCardPhone(order: any) {
   const candidates = [
+    order?.confirmation_default_phone,
+    order?.confirmationDefaultPhone,
     order?.clinic_phone,
     order?.clinicPhone,
     order?.clinic_mobile,
