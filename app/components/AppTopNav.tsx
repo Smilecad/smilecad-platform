@@ -19,7 +19,7 @@ export default function AppTopNav({ current }: { current?: string }) {
     try {
       const savedUser = window.localStorage.getItem('smilecad_user')
       const user = savedUser ? JSON.parse(savedUser) : null
-      setIsAdmin(user?.role === 'admin')
+      setIsAdmin(String(user?.role || '').toLowerCase() === 'admin')
     } catch {
       setIsAdmin(false)
     }

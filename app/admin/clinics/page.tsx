@@ -1,11 +1,15 @@
+// app/admin/clinics/page.tsx
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import AppTopNav from '@/app/components/AppTopNav'
 
 type Clinic = {
   id: number
   loginId: string
+  contactName: string
+  contactRole: string
   phone: string
   role: string
   clinicName: string
@@ -84,6 +88,13 @@ export default function AdminClinicsPage() {
 
       const data = await readJsonSafely(res)
 
+      if (res.status === 401 || res.status === 403) {
+        window.localStorage.removeItem('smilecad_token')
+        window.localStorage.removeItem('smilecad_user')
+        router.replace('/login')
+        return
+      }
+
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || '치과 회원 목록을 불러오지 못했습니다.')
       }
@@ -102,6 +113,7 @@ export default function AdminClinicsPage() {
 
   useEffect(() => {
     loadClinics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const filteredClinics = useMemo(() => {
@@ -112,6 +124,8 @@ export default function AdminClinicsPage() {
     return clinics.filter((clinic) => {
       return [
         clinic.loginId,
+        clinic.contactName,
+        clinic.contactRole,
         clinic.phone,
         clinic.clinicName,
         clinic.clinicAddress,
@@ -129,6 +143,8 @@ export default function AdminClinicsPage() {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-8">
       <div className="mx-auto max-w-7xl">
+        <AppTopNav current="admin-clinics" />
+
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-sm font-bold text-blue-600">관리자</p>
@@ -136,7 +152,7 @@ export default function AdminClinicsPage() {
               치과 회원 목록
             </h1>
             <p className="mt-2 text-sm font-semibold text-slate-500">
-              플랫폼에 가입한 치과 계정과 프로필 정보를 확인합니다.
+              플랫폼에 가입한 치과 계정과 담당자 정보를 확인합니다.
             </p>
           </div>
 
@@ -183,7 +199,7 @@ export default function AdminClinicsPage() {
             <div>
               <h2 className="text-lg font-black text-slate-900">가입 치과</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                아이디, 치과명, 휴대폰 번호, 주소로 검색할 수 있습니다.
+                담당자명, 아이디, 치과명, 전화번호, 주소로 검색할 수 있습니다.
               </p>
             </div>
 
@@ -191,8 +207,8 @@ export default function AdminClinicsPage() {
               type="text"
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="치과명, 아이디, 전화번호 검색"
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-500 focus:bg-white md:w-[320px]"
+              placeholder="담당자명, 치과명, 아이디, 전화번호 검색"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-500 focus:bg-white md:w-[360px]"
             />
           </div>
 
@@ -212,11 +228,13 @@ export default function AdminClinicsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-separate border-spacing-0">
+              <table className="w-full min-w-[1180px] border-separate border-spacing-0">
                 <thead>
                   <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500">
                     <th className="border-b border-slate-200 px-4 py-3">가입일</th>
                     <th className="border-b border-slate-200 px-4 py-3">아이디</th>
+                    <th className="border-b border-slate-200 px-4 py-3">담당자명</th>
+                    <th className="border-b border-slate-200 px-4 py-3">직책/구분</th>
                     <th className="border-b border-slate-200 px-4 py-3">치과명</th>
                     <th className="border-b border-slate-200 px-4 py-3">휴대폰 번호</th>
                     <th className="border-b border-slate-200 px-4 py-3">주소</th>
@@ -238,6 +256,14 @@ export default function AdminClinicsPage() {
                       </td>
 
                       <td className="border-b border-slate-100 px-4 py-4 font-black text-slate-900">
+                        {clinic.contactName || '-'}
+                      </td>
+
+                      <td className="border-b border-slate-100 px-4 py-4">
+                        {clinic.contactRole || '-'}
+                      </td>
+
+                      <td className="border-b border-slate-100 px-4 py-4 font-black text-blue-700">
                         {clinic.clinicName || '-'}
                       </td>
 
