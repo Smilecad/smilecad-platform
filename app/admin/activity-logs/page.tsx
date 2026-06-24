@@ -224,21 +224,24 @@ export default function AdminActivityLogsPage() {
           return
         }
 
-        const params = new URLSearchParams()
-        params.set('limit', String(limit))
-        params.set('offset', String(nextOffset))
-        if (eventType) params.set('eventType', eventType)
-        if (orderId.trim()) params.set('orderId', orderId.trim())
-        if (loginId.trim()) params.set('loginId', loginId.trim())
-        if (targetType.trim()) params.set('targetType', targetType.trim())
-        if (success) params.set('success', success)
+        const requestBody = {
+          limit,
+          offset: nextOffset,
+          ...(eventType ? { eventType } : {}),
+          ...(orderId.trim() ? { orderId: orderId.trim() } : {}),
+          ...(loginId.trim() ? { loginId: loginId.trim() } : {}),
+          ...(targetType.trim() ? { targetType: targetType.trim() } : {}),
+          ...(success ? { success } : {}),
+        }
 
-        const res = await fetch(`${LIST_ACTIVITY_LOGS_API_URL}?${params.toString()}`, {
-          method: 'GET',
+        const res = await fetch(LIST_ACTIVITY_LOGS_API_URL, {
+          method: 'POST',
           cache: 'no-store',
           headers: {
+            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
+          body: JSON.stringify(requestBody),
         })
 
         if (handleAuthError(res.status)) return
