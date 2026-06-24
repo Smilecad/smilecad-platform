@@ -30,6 +30,10 @@ const LIST_CONFIRMATIONS_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_CONFIRMATIONS_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-confirmations'
 
+const GET_CONFIRMATION_API_URL =
+  process.env.NEXT_PUBLIC_NCP_GET_CONFIRMATION_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-confirmation'
+
 const GET_DESIGN_CARD_UPLOAD_URL_API_URL =
   process.env.NEXT_PUBLIC_NCP_GET_DESIGN_CARD_UPLOAD_URL_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-design-card-upload-url'
@@ -53,11 +57,17 @@ const DEFAULT_DOWNLOAD_ERROR =
 const DEFAULT_CONFIRMATION_SEND_ERROR =
   '디자인 확인서 등록/발송 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
 
+const DEFAULT_CONFIRMATION_IMAGE_ERROR =
+  '디자인 확인서 이미지를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+
 type DesignConfirmation = {
   confirmation_id?: number
   confirmationId?: number
   order_id?: number
   orderId?: number
+  token?: string | null
+  confirmation_token?: string | null
+  confirmationToken?: string | null
   image_object_key?: string | null
   imageObjectKey?: string | null
   image_bucket?: string | null
@@ -463,6 +473,17 @@ function getConfirmationUrl(item: DesignConfirmation) {
   return item.confirm_url || item.confirmUrl || ''
 }
 
+function getConfirmationToken(item: DesignConfirmation) {
+  const directToken = item.token || item.confirmation_token || item.confirmationToken
+
+  if (directToken) return String(directToken).trim()
+
+  const url = getConfirmationUrl(item)
+  const match = String(url || '').match(/\/confirm\/([^/?#]+)/)
+
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
 function isConfirmationExpired(item: DesignConfirmation) {
   return Boolean(item.is_expired ?? item.isExpired)
 }
@@ -574,6 +595,9 @@ export default function OrderDetailPage() {
   const [designCardPhone, setDesignCardPhone] = useState('')
   const [sendingConfirmation, setSendingConfirmation] = useState(false)
   const [sendConfirmationMessage, setSendConfirmationMessage] = useState('')
+  const [confirmationImageUrl, setConfirmationImageUrl] = useState('')
+  const [confirmationImageTitle, setConfirmationImageTitle] = useState('')
+  const [confirmationImageLoadingId, setConfirmationImageLoadingId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [userRole, setUserRole] = useState('clinic')
 
@@ -1002,6 +1026,65 @@ export default function OrderDetailPage() {
     } catch (_) {
       alert('링크 복사에 실패했습니다.')
     }
+  }
+
+  const handleOpenConfirmationImage = async (confirmation: DesignConfirmation) => {
+    const confirmationId = getConfirmationId(confirmation)
+    const confirmationToken = getConfirmationToken(confirmation)
+
+    if (!confirmationToken) {
+      alert('디자인 확인서 token을 확인할 수 없습니다.')
+      return
+    }
+
+    const loginToken = getTokenOrRedirect()
+    if (!loginToken) return
+
+    try {
+      setConfirmationImageLoadingId(confirmationId || -1)
+
+      const res = await fetch(GET_CONFIRMATION_API_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${loginToken}`,
+        },
+        body: JSON.stringify({
+          token: confirmationToken,
+          confirmation_token: confirmationToken,
+          authToken: loginToken,
+        }),
+      })
+
+      if (handleAuthError(res.status)) return
+
+      const data = await parseJsonResponse(res)
+
+      if (!res.ok || !data?.success) {
+        console.error('get-confirmation 응답 오류:', data)
+        throw new Error(data?.error || DEFAULT_CONFIRMATION_IMAGE_ERROR)
+      }
+
+      const imageUrl = data.image_url || data.imageUrl || data.url
+
+      if (!imageUrl) {
+        throw new Error('디자인 확인서 이미지 URL을 확인할 수 없습니다.')
+      }
+
+      setConfirmationImageTitle(`디자인 확인서 #${confirmationId || '-'}`)
+      setConfirmationImageUrl(imageUrl)
+    } catch (err) {
+      console.error('디자인 확인서 이미지 조회 실패:', err)
+      alert(toSafeUserMessage(err, DEFAULT_CONFIRMATION_IMAGE_ERROR))
+    } finally {
+      setConfirmationImageLoadingId(null)
+    }
+  }
+
+  const handleCloseConfirmationImage = () => {
+    setConfirmationImageUrl('')
+    setConfirmationImageTitle('')
   }
 
   const selectedTeethList = useMemo<string[]>(() => {
@@ -1768,15 +1851,30 @@ export default function OrderDetailPage() {
                           </p>
                         </div>
 
-                        {confirmUrl && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyConfirmationUrl(confirmUrl)}
-                            className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-black text-blue-600 transition hover:border-blue-200 hover:bg-blue-50"
-                          >
-                            확인 링크 복사
-                          </button>
-                        )}
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          {getConfirmationToken(confirmation) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenConfirmationImage(confirmation)}
+                              disabled={confirmationImageLoadingId === (confirmationId || -1)}
+                              className="rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {confirmationImageLoadingId === (confirmationId || -1)
+                                ? '불러오는 중...'
+                                : '이미지 보기'}
+                            </button>
+                          )}
+
+                          {confirmUrl && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyConfirmationUrl(confirmUrl)}
+                              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-black text-blue-600 transition hover:border-blue-200 hover:bg-blue-50"
+                            >
+                              확인 링크 복사
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="mt-4 grid grid-cols-1 gap-3 text-[13px] font-bold md:grid-cols-2">
@@ -1886,6 +1984,37 @@ export default function OrderDetailPage() {
           </div>
         </section>
       </div>
+
+      {confirmationImageUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6">
+          <div className="flex max-h-[92vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="text-[12px] font-black text-blue-600">디자인 확인서 이미지</p>
+                <h3 className="mt-1 text-[20px] font-black tracking-[-0.03em] text-slate-950">
+                  {confirmationImageTitle || '디자인 확인서'}
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseConfirmationImage}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-[14px] font-black text-slate-600 transition hover:bg-slate-50"
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="overflow-auto bg-slate-100 p-4">
+              <img
+                src={confirmationImageUrl}
+                alt="디자인 확인서 이미지"
+                className="mx-auto max-h-[78vh] max-w-full rounded-2xl bg-white object-contain shadow-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
