@@ -42,6 +42,10 @@ const CREATE_CONFIRMATION_API_URL =
   process.env.NEXT_PUBLIC_NCP_CREATE_CONFIRMATION_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/create-confirmation'
 
+const LIST_ACTIVITY_LOGS_API_URL =
+  process.env.NEXT_PUBLIC_NCP_LIST_ACTIVITY_LOGS_API_URL ||
+  'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-activity-logs'
+
 const DESIGN_CARD_INTERNAL_API_KEY =
   process.env.NEXT_PUBLIC_DESIGN_CARD_INTERNAL_API_KEY || ''
 
@@ -59,6 +63,9 @@ const DEFAULT_CONFIRMATION_SEND_ERROR =
 
 const DEFAULT_CONFIRMATION_IMAGE_ERROR =
   '디자인 확인서 이미지를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+
+const DEFAULT_ACTIVITY_LOGS_ERROR =
+  '주문 활동 로그를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
 
 type DesignConfirmation = {
   confirmation_id?: number
@@ -91,6 +98,33 @@ type DesignConfirmation = {
   confirmUrl?: string | null
   is_expired?: boolean
   isExpired?: boolean
+}
+
+type ActivityLogItem = {
+  id?: number
+  event_type?: string | null
+  eventType?: string | null
+  event_action?: string | null
+  eventAction?: string | null
+  order_id?: number | null
+  orderId?: number | null
+  target_type?: string | null
+  targetType?: string | null
+  target_id?: string | null
+  targetId?: string | null
+  login_id?: string | null
+  loginId?: string | null
+  user_role?: string | null
+  userRole?: string | null
+  clinic_name?: string | null
+  clinicName?: string | null
+  success?: boolean | null
+  message?: string | null
+  detail?: any
+  created_at?: string | null
+  createdAt?: string | null
+  created_at_kst?: string | null
+  createdAtKst?: string | null
 }
 
 function isTechnicalErrorMessage(message: string) {
@@ -512,6 +546,96 @@ function formatMoney(value?: number | string | null) {
   return `${numeric.toLocaleString('ko-KR')}원`
 }
 
+function getActivityEventType(item: ActivityLogItem) {
+  return String(item.event_type || item.eventType || '').trim()
+}
+
+function getActivityEventAction(item: ActivityLogItem) {
+  return String(item.event_action || item.eventAction || '').trim()
+}
+
+function getActivityCreatedAt(item: ActivityLogItem) {
+  return item.created_at_kst || item.createdAtKst || item.created_at || item.createdAt || null
+}
+
+function getActivityLoginId(item: ActivityLogItem) {
+  return item.login_id || item.loginId || '-'
+}
+
+function getActivityTargetType(item: ActivityLogItem) {
+  return item.target_type || item.targetType || '-'
+}
+
+function getActivityTargetId(item: ActivityLogItem) {
+  return item.target_id || item.targetId || '-'
+}
+
+function getActivityClinicName(item: ActivityLogItem) {
+  return item.clinic_name || item.clinicName || '-'
+}
+
+function getActivityEventLabel(eventType?: string | null) {
+  const value = String(eventType || '').trim()
+
+  const labelMap: Record<string, string> = {
+    'order.created': '주문 생성',
+    'order.status_changed': '상태 변경',
+    'order.status_change_failed': '상태 변경 실패',
+    'order.file_download_url_created': '파일 다운로드',
+    'order.file_download_failed': '파일 다운로드 실패',
+    'design_confirmation.created': '확인서 발송',
+    'design_confirmation.create_failed': '확인서 발송 실패',
+    'design_confirmation.responded': '확인서 응답',
+    'profile.updated': '회원정보 수정',
+  }
+
+  return labelMap[value] || value || '-'
+}
+
+function activityEventStyle(item: ActivityLogItem) {
+  const eventType = getActivityEventType(item)
+
+  if (item.success === false || eventType.includes('failed')) {
+    return 'border-red-100 bg-red-50 text-red-700'
+  }
+
+  if (eventType.includes('status')) {
+    return 'border-blue-100 bg-blue-50 text-blue-700'
+  }
+
+  if (eventType.includes('download')) {
+    return 'border-purple-100 bg-purple-50 text-purple-700'
+  }
+
+  if (eventType.includes('confirmation') || eventType.includes('design')) {
+    return 'border-amber-100 bg-amber-50 text-amber-700'
+  }
+
+  if (eventType.includes('profile')) {
+    return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  }
+
+  return 'border-slate-100 bg-slate-50 text-slate-600'
+}
+
+function formatActivityDetail(detail: any) {
+  if (!detail) return ''
+
+  if (typeof detail === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(detail), null, 2)
+    } catch {
+      return detail
+    }
+  }
+
+  try {
+    return JSON.stringify(detail, null, 2)
+  } catch {
+    return String(detail)
+  }
+}
+
 function parseTextArray(value: any): string[] {
   if (!value) return []
 
@@ -710,6 +834,9 @@ export default function OrderDetailPage() {
   const [confirmationImageLoadingId, setConfirmationImageLoadingId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [userRole, setUserRole] = useState('clinic')
+  const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([])
+  const [activityLogLoading, setActivityLogLoading] = useState(false)
+  const [activityLogError, setActivityLogError] = useState('')
 
   const getTokenOrRedirect = useCallback(() => {
     const token = window.localStorage.getItem('smilecad_token')
@@ -788,6 +915,56 @@ export default function OrderDetailPage() {
     [id, handleAuthError]
   )
 
+  const fetchOrderActivityLogs = useCallback(
+    async (token: string) => {
+      if (!id || !LIST_ACTIVITY_LOGS_API_URL) return
+
+      try {
+        setActivityLogLoading(true)
+        setActivityLogError('')
+
+        const res = await fetch(LIST_ACTIVITY_LOGS_API_URL, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            order_id: Number(id),
+            orderId: Number(id),
+            limit: 10,
+            offset: 0,
+          }),
+        })
+
+        if (handleAuthError(res.status)) return
+
+        const data = await parseJsonResponse(res)
+
+        if (!res.ok || !data?.success) {
+          console.error('list-activity-logs 응답 오류:', data)
+          throw new Error(data?.error || DEFAULT_ACTIVITY_LOGS_ERROR)
+        }
+
+        const items = Array.isArray(data.items)
+          ? data.items
+          : Array.isArray(data.logs)
+            ? data.logs
+            : []
+
+        setActivityLogs(items)
+      } catch (err) {
+        console.error('주문 활동 로그 조회 실패:', err)
+        setActivityLogs([])
+        setActivityLogError(toSafeUserMessage(err, DEFAULT_ACTIVITY_LOGS_ERROR))
+      } finally {
+        setActivityLogLoading(false)
+      }
+    },
+    [id, handleAuthError]
+  )
+
   const fetchOrderDetail = useCallback(async () => {
     if (!id) return
 
@@ -815,16 +992,25 @@ export default function OrderDetailPage() {
         throw new Error(data?.error || DEFAULT_DETAIL_ERROR)
       }
 
+      const nextRole = data.role || 'clinic'
+
       setOrder(data.order || null)
-      setUserRole(data.role || 'clinic')
+      setUserRole(nextRole)
       await fetchConfirmations(token)
+
+      if (String(nextRole).toLowerCase() === 'admin') {
+        await fetchOrderActivityLogs(token)
+      } else {
+        setActivityLogs([])
+        setActivityLogError('')
+      }
     } catch (err) {
       console.error('주문 상세 조회 실패:', err)
       setError(toSafeUserMessage(err, DEFAULT_DETAIL_ERROR))
     } finally {
       setLoading(false)
     }
-  }, [id, getTokenOrRedirect, handleAuthError, fetchConfirmations])
+  }, [id, getTokenOrRedirect, handleAuthError, fetchConfirmations, fetchOrderActivityLogs])
 
   useEffect(() => {
     fetchOrderDetail()
@@ -2174,6 +2360,119 @@ export default function OrderDetailPage() {
             </div>
           </div>
         </section>
+
+        {userRole === 'admin' && (
+          <section className="mt-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[13px] font-black text-blue-600">관리자 전용</p>
+                <h2 className="mt-1 text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                  주문 활동 로그
+                </h2>
+                <p className="mt-2 text-[13px] font-semibold leading-5 text-slate-400">
+                  이 주문에서 발생한 상태 변경, 파일 다운로드, 확인서 발송/응답 기록을 최근 10개까지 표시합니다.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const token = getTokenOrRedirect()
+                  if (token) fetchOrderActivityLogs(token)
+                }}
+                disabled={activityLogLoading}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {activityLogLoading ? '불러오는 중...' : '로그 새로고침'}
+              </button>
+            </div>
+
+            {activityLogError ? (
+              <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-[14px] font-bold text-red-600">
+                {activityLogError}
+              </div>
+            ) : activityLogLoading ? (
+              <div className="rounded-2xl bg-slate-50 px-4 py-10 text-center text-[14px] font-bold text-slate-400">
+                주문 활동 로그를 불러오는 중입니다.
+              </div>
+            ) : activityLogs.length > 0 ? (
+              <div className="space-y-3">
+                {activityLogs.map((log) => {
+                  const eventType = getActivityEventType(log)
+                  const eventAction = getActivityEventAction(log)
+                  const detailText = formatActivityDetail(log.detail)
+
+                  return (
+                    <div
+                      key={log.id || `${eventType}-${getActivityCreatedAt(log)}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-blue-200 hover:bg-blue-50/20"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-black ${activityEventStyle(log)}`}>
+                              {getActivityEventLabel(eventType)}
+                            </span>
+
+                            <span className={log.success === false ? 'text-[12px] font-black text-red-500' : 'text-[12px] font-black text-emerald-600'}>
+                              {log.success === false ? '실패' : '성공'}
+                            </span>
+
+                            {eventAction && (
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] font-black text-slate-500">
+                                {eventAction}
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="mt-3 text-[15px] font-black text-slate-900">
+                            {log.message || getActivityEventLabel(eventType)}
+                          </p>
+
+                          <div className="mt-3 grid grid-cols-1 gap-2 text-[12px] font-bold text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <span className="block text-slate-400">발생 시간</span>
+                              <span className="mt-1 block text-slate-700">{formatDateTime(getActivityCreatedAt(log))}</span>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <span className="block text-slate-400">처리자</span>
+                              <span className="mt-1 block truncate text-slate-700">{getActivityLoginId(log)}</span>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <span className="block text-slate-400">대상</span>
+                              <span className="mt-1 block truncate text-slate-700">{getActivityTargetType(log)} / {getActivityTargetId(log)}</span>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <span className="block text-slate-400">치과명</span>
+                              <span className="mt-1 block truncate text-slate-700" title={getActivityClinicName(log)}>
+                                {getActivityClinicName(log)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {detailText && (
+                        <details className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                          <summary className="cursor-pointer text-[13px] font-black text-slate-600">
+                            상세 JSON 보기
+                          </summary>
+                          <pre className="mt-3 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white p-4 text-[12px] font-semibold leading-5 text-slate-600">
+                            {detailText}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-[14px] font-bold text-slate-400">
+                이 주문에 기록된 활동 로그가 없습니다.
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {confirmationImageUrl && (
