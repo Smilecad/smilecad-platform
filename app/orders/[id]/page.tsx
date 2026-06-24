@@ -1713,21 +1713,86 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 border-t border-slate-100 py-5 xl:grid-cols-2">
-              <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
-                <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
-                <ToothSummaryRows teeth={selectedTeethList} tone="blue" keyPrefix="detail-selected" />
-                <p className="mt-4 text-[14px] font-black text-blue-700">
-                  범위 총 {selectedToothCount}개
-                </p>
+            <div className="border-t border-slate-100 py-7">
+              <div className="mb-7 flex items-center gap-3">
+                <div className="text-blue-600">
+                  <IconTooth />
+                </div>
+                <h3 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+                  치식 정보
+                </h3>
               </div>
 
-              <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
-                <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
-                <ToothSummaryRows teeth={billableTeethList} tone="emerald" keyPrefix="detail-billable" />
-                <p className="mt-4 text-[14px] font-black text-emerald-700">
-                  총 {billableToothCount}개
-                </p>
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
+                  <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
+                  <ToothSummaryRows teeth={selectedTeethList} tone="blue" keyPrefix="detail-selected" />
+                  <p className="mt-4 text-[14px] font-black text-blue-700">
+                    범위 총 {selectedToothCount}개
+                  </p>
+                </div>
+
+                <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
+                  <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
+                  <ToothSummaryRows teeth={billableTeethList} tone="emerald" keyPrefix="detail-billable" />
+                  <p className="mt-4 text-[14px] font-black text-emerald-700">
+                    총 {billableToothCount}개
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-8 overflow-x-auto pb-2">
+                <div className={selectedToothType === 'primary' ? 'min-w-[620px]' : 'min-w-[900px]'}>
+                  {toothChartRows.map((row, rowIndex) => (
+                    <div key={row.label}>
+                      {rowIndex > 0 && <div className="my-6 h-px w-full bg-slate-200" />}
+
+                      <div className="grid grid-cols-[90px_1fr] items-center gap-4">
+                        <p className="text-[15px] font-black text-slate-500">{row.label}</p>
+
+                        <div className="flex items-center justify-between gap-4">
+                          {row.teeth.map((n) => {
+                            const tooth = String(n)
+                            const selected = selectedTeethList.includes(tooth)
+                            const missing = missingTeethList.includes(tooth)
+
+                            return (
+                              <div key={n} className="flex flex-col items-center gap-2">
+                                <ToothIcon selected={selected} missing={missing} flipped={row.flipped} />
+                                <span
+                                  className={`text-[13px] font-black ${
+                                    missing
+                                      ? 'text-red-500'
+                                      : selected
+                                        ? 'text-blue-700'
+                                        : 'text-slate-600'
+                                  }`}
+                                >
+                                  {n}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-7 flex flex-wrap items-center gap-4 rounded-[20px] bg-slate-50 p-5">
+                <div className="flex items-center gap-2 text-[13px] font-bold text-blue-700">
+                  <span className="h-3 w-3 rounded-full bg-blue-600" />
+                  제작 범위
+                </div>
+                <div className="flex items-center gap-2 text-[13px] font-bold text-red-500">
+                  <span className="h-3 w-3 rounded-full bg-red-500" />
+                  없는 치아 / 발치 치아
+                </div>
+                <div className="flex items-center gap-2 text-[13px] font-bold text-slate-500">
+                  <span className="h-3 w-3 rounded-full bg-slate-300" />
+                  선택되지 않은 치아
+                </div>
               </div>
             </div>
 
@@ -1741,89 +1806,6 @@ export default function OrderDetailPage() {
         </section>
 
         <section className="mb-7 space-y-7">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-            <div className="mb-7 flex items-center gap-3">
-              <div className="text-blue-600">
-                <IconTooth />
-              </div>
-              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
-                치식 정보
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
-                <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
-                <ToothSummaryRows teeth={selectedTeethList} tone="blue" keyPrefix="selected" />
-                <p className="mt-4 text-[14px] font-black text-blue-700">
-                  범위 총 {selectedToothCount}개
-                </p>
-              </div>
-
-              <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
-                <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
-                <ToothSummaryRows teeth={billableTeethList} tone="emerald" keyPrefix="billable" />
-                <p className="mt-4 text-[14px] font-black text-emerald-700">
-                  총 {billableToothCount}개
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-8 overflow-x-auto pb-2">
-              <div className={selectedToothType === 'primary' ? 'min-w-[620px]' : 'min-w-[900px]'}>
-                {toothChartRows.map((row, rowIndex) => (
-                  <div key={row.label}>
-                    {rowIndex > 0 && <div className="my-6 h-px w-full bg-slate-200" />}
-
-                    <div className="grid grid-cols-[90px_1fr] items-center gap-4">
-                      <p className="text-[15px] font-black text-slate-500">{row.label}</p>
-
-                      <div className="flex items-center justify-between gap-4">
-                        {row.teeth.map((n) => {
-                          const tooth = String(n)
-                          const selected = selectedTeethList.includes(tooth)
-                          const missing = missingTeethList.includes(tooth)
-
-                          return (
-                            <div key={n} className="flex flex-col items-center gap-2">
-                              <ToothIcon selected={selected} missing={missing} flipped={row.flipped} />
-                              <span
-                                className={`text-[13px] font-black ${
-                                  missing
-                                    ? 'text-red-500'
-                                    : selected
-                                      ? 'text-blue-700'
-                                      : 'text-slate-600'
-                                }`}
-                              >
-                                {n}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-7 flex flex-wrap items-center gap-4 rounded-[20px] bg-slate-50 p-5">
-              <div className="flex items-center gap-2 text-[13px] font-bold text-blue-700">
-                <span className="h-3 w-3 rounded-full bg-blue-600" />
-                제작 범위
-              </div>
-              <div className="flex items-center gap-2 text-[13px] font-bold text-red-500">
-                <span className="h-3 w-3 rounded-full bg-red-500" />
-                없는 치아 / 발치 치아
-              </div>
-              <div className="flex items-center gap-2 text-[13px] font-bold text-slate-500">
-                <span className="h-3 w-3 rounded-full bg-slate-300" />
-                선택되지 않은 치아
-              </div>
-            </div>
-          </div>
-
           <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
             <h2 className="mb-6 text-[22px] font-black tracking-[-0.03em] text-slate-950">
               주문 금액
