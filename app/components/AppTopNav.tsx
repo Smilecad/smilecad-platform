@@ -32,6 +32,7 @@ export default function AppTopNav({ current }: { current?: string }) {
     { name: '명세서', path: '/billing', id: 'billing' },
     { name: '회원정보 수정', path: '/profile', id: 'profile' },
     { name: '치과 회원목록', path: '/admin/clinics', id: 'admin-clinics', adminOnly: true },
+    { name: '활동 로그', path: '/admin/activity-logs', id: 'admin-activity-logs', adminOnly: true },
     { name: '문의하기', path: '/inquiry', id: 'inquiry' },
   ]
 
