@@ -851,6 +851,7 @@ export default function NewOrderPage() {
   const [clinicAddress, setClinicAddress] = useState('')
   const [deliveryDate, setDeliveryDate] = useState('')
   const [isRemake, setIsRemake] = useState(false)
+  const [remakeReason, setRemakeReason] = useState('')
   const [requestNote, setRequestNote] = useState('')
 
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
@@ -1388,6 +1389,7 @@ export default function NewOrderPage() {
           jigRequired,
           requestNote: requestNote?.trim() || null,
           isRemake,
+          remakeReason: isRemake ? remakeReason.trim() || null : null,
           isAgreed,
           scanFileNames,
           scanFilePaths,
@@ -1472,7 +1474,7 @@ export default function NewOrderPage() {
           <form
             id="new-order-form"
             onSubmit={handleSubmit}
-            className="grid grid-cols-1 gap-5 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[340px_minmax(0,1fr)_320px] xl:p-8"
+            className="grid grid-cols-1 gap-5 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start xl:p-8"
           >
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <SectionTitle title="기본 정보" />
@@ -1579,17 +1581,39 @@ export default function NewOrderPage() {
                 </div>
 
                 <div className="border-t border-[#eef2f6] pt-5">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[82px_1fr] sm:items-center sm:gap-4">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[82px_1fr] sm:items-start sm:gap-4">
                     <FieldLabel>remake여부</FieldLabel>
-                    <label className="flex items-center gap-3 text-[14px] font-medium text-[#4b5565]">
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 text-[14px] font-medium text-[#4b5565]">
+                        <input
+                          type="checkbox"
+                          checked={isRemake}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setIsRemake(checked)
+                            if (!checked) setRemakeReason('')
+                          }}
+                          className="h-4 w-4"
+                        />
+                        remake
+                      </label>
+
                       <input
-                        type="checkbox"
-                        checked={isRemake}
-                        onChange={(e) => setIsRemake(e.target.checked)}
-                        className="h-4 w-4"
+                        type="text"
+                        value={remakeReason}
+                        onChange={(e) => setRemakeReason(e.target.value)}
+                        disabled={!isRemake}
+                        placeholder="ex) 끊어짐, 안맞음, 떨어짐"
+                        className={classNames(
+                          'h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
+                          !isRemake && 'bg-[#f8fafc] text-[#98a2b3]'
+                        )}
                       />
-                      remake입니다
-                    </label>
+
+                      <div className="text-[12px] font-semibold text-[#98a2b3]">
+                        리메이크 주문인 경우 사유를 함께 입력해주세요.
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1892,7 +1916,7 @@ export default function NewOrderPage() {
               {error && <div className="px-4 pb-6 text-sm font-semibold text-red-600 sm:px-6">{error}</div>}
             </div>
 
-            <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+            <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] xl:col-start-1">
               <SectionTitle title="요약 / 예상 금액" />
 
               <div className="p-4 sm:p-5">
@@ -1994,6 +2018,11 @@ export default function NewOrderPage() {
                   <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
                     <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">remake 여부</div>
                     <div className="text-[15px] font-bold text-[#475467]">{isRemake ? 'Yes' : 'No'}</div>
+                    {isRemake && (
+                      <div className="mt-2 break-words text-[12px] font-bold leading-5 text-[#667085]">
+                        {remakeReason.trim() || '사유 미입력'}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2044,6 +2073,15 @@ export default function NewOrderPage() {
                     </div>
                   </div>
                 </div>
+
+                {isRemake && (
+                  <div className="rounded-[18px] border border-amber-100 bg-amber-50 p-4">
+                    <div className="text-[13px] font-black text-amber-600">remake 사유</div>
+                    <div className="mt-2 break-words text-[15px] font-bold leading-6 text-amber-800">
+                      {remakeReason.trim() || '-'}
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-[18px] border border-[#dbeafe] bg-[#eff6ff] p-4">
                   <div className="text-[13px] font-black text-[#2563eb]">제작 범위 치아</div>
