@@ -83,8 +83,13 @@ export default function ConfirmPage() {
   const [revisionNote, setRevisionNote] = useState('')
   const [submitMessage, setSubmitMessage] = useState('')
 
-  const getConfirmationUrl = process.env.NEXT_PUBLIC_NCP_GET_CONFIRMATION_API_URL || ''
-  const respondConfirmationUrl = process.env.NEXT_PUBLIC_NCP_RESPOND_CONFIRMATION_API_URL || ''
+  const getConfirmationUrl =
+    process.env.NEXT_PUBLIC_NCP_GET_CONFIRMATION_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/get-confirmation'
+
+  const respondConfirmationUrl =
+    process.env.NEXT_PUBLIC_NCP_RESPOND_CONFIRMATION_API_URL ||
+    'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/respond-confirmation'
 
   async function loadConfirmation() {
     if (!token) {
