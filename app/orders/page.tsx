@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppTopNav from '@/app/components/AppTopNav'
 
-type OrderStatus = '전체' | '접수 대기' | '디자인 작업중' | '수정 요청 중' | '주문 재접수'
+type OrderStatus = '전체' | '주문 접수' | '디자인 작업중' | '디자인 확인서 발송' | '수정 요청 중' | '제작 진행'
 
 type StoredUser = {
   id?: number
@@ -37,10 +37,11 @@ type OrderItem = {
 
 const STATUS_TABS: OrderStatus[] = [
   '전체',
-  '접수 대기',
+  '주문 접수',
   '디자인 작업중',
+  '디자인 확인서 발송',
   '수정 요청 중',
-  '주문 재접수',
+  '제작 진행',
 ]
 
 const LIST_ORDERS_API_URL =
@@ -111,19 +112,27 @@ function toSafeUserMessage(error: unknown, fallback = DEFAULT_LIST_ERROR) {
   return fallback
 }
 
-function statusBadgeClass(status?: string | null) {
-  const value = status || '접수 대기'
+function getDisplayStatus(status?: string | null) {
+  const value = String(status || '').trim()
 
-  if (value.includes('디자인') || value.includes('작업')) {
+  if (!value || value === '접수 대기') return '주문 접수'
+
+  return value
+}
+
+function statusBadgeClass(status?: string | null) {
+  const value = getDisplayStatus(status)
+
+  if (value.includes('제작 진행') || value.includes('완료')) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('확인서') || value.includes('디자인') || value.includes('작업')) {
     return 'border-amber-200 bg-amber-50 text-amber-700'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
     return 'border-orange-200 bg-orange-50 text-orange-700'
-  }
-
-  if (value.includes('완료')) {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   }
 
   return 'border-blue-200 bg-blue-50 text-blue-700'
@@ -266,7 +275,7 @@ export default function OrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const matchStatus = selectedStatus === '전체' || order.status === selectedStatus
+      const matchStatus = selectedStatus === '전체' || getDisplayStatus(order.status) === selectedStatus
 
       const orderDateKey = getOrderCreatedDateKey(order)
 
@@ -419,7 +428,16 @@ export default function OrdersPage() {
                 return (
                   <div
                     key={order.id}
-                    className="flex flex-col gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] lg:flex-row lg:items-center lg:justify-between"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(`/orders/${order.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        router.push(`/orders/${order.id}`)
+                      }
+                    }}
+                    className="flex cursor-pointer flex-col gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] focus:outline-none focus:ring-4 focus:ring-blue-100 lg:flex-row lg:items-center lg:justify-between"
                   >
                     <div className="flex items-start gap-3 lg:w-[70px] lg:justify-center">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[15px] font-black text-blue-600">
@@ -433,7 +451,7 @@ export default function OrdersPage() {
                               order.status
                             )}`}
                           >
-                            {order.status || '접수 대기'}
+                            {getDisplayStatus(order.status)}
                           </span>
                         </div>
 
@@ -452,7 +470,7 @@ export default function OrdersPage() {
                         order.status
                       )}`}
                     >
-                      {order.status || '접수 대기'}
+                      {getDisplayStatus(order.status)}
                     </div>
 
                     <div className="hidden min-w-[160px] flex-1 flex-col lg:flex">
@@ -502,7 +520,10 @@ export default function OrdersPage() {
 
                       <button
                         type="button"
-                        onClick={() => router.push(`/orders/${order.id}`)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          router.push(`/orders/${order.id}`)
+                        }}
                         className="rounded-[10px] border border-[#d6dde8] bg-white px-5 py-2 text-[13px] font-bold text-[#475467] transition hover:bg-[#f8fafc] hover:text-[#1f2937]"
                       >
                         상세 보기

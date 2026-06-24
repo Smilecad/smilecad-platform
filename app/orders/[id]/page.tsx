@@ -409,14 +409,30 @@ function getAgeFromBirth(value?: string | null) {
   return age > 0 ? `${age}세` : ''
 }
 
-function statusStyle(status?: string | null) {
-  const value = status || '접수 대기'
+const ADMIN_STATUS_OPTIONS = [
+  '주문 접수',
+  '디자인 작업중',
+  '디자인 확인서 발송',
+  '수정 요청 중',
+  '제작 진행',
+]
 
-  if (value.includes('완료')) {
+function getDisplayOrderStatus(status?: string | null) {
+  const value = String(status || '').trim()
+
+  if (!value || value === '접수 대기') return '주문 접수'
+
+  return value
+}
+
+function statusStyle(status?: string | null) {
+  const value = getDisplayOrderStatus(status)
+
+  if (value.includes('제작 진행') || value.includes('완료')) {
     return 'border-emerald-100 bg-emerald-50 text-emerald-700'
   }
 
-  if (value.includes('작업') || value.includes('제작') || value.includes('디자인')) {
+  if (value.includes('디자인') || value.includes('작업') || value.includes('확인서')) {
     return 'border-amber-100 bg-amber-50 text-amber-700'
   }
 
@@ -683,9 +699,12 @@ export default function OrderDetailPage() {
   const [confirmationError, setConfirmationError] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
   const [designCardFile, setDesignCardFile] = useState<File | null>(null)
+  const [designCardPreviewUrl, setDesignCardPreviewUrl] = useState('')
   const [designCardPhone, setDesignCardPhone] = useState('')
   const [sendingConfirmation, setSendingConfirmation] = useState(false)
   const [sendConfirmationMessage, setSendConfirmationMessage] = useState('')
+  const [confirmationThumbUrls, setConfirmationThumbUrls] = useState<Record<string, string>>({})
+  const [confirmationThumbLoading, setConfirmationThumbLoading] = useState(false)
   const [confirmationImageUrl, setConfirmationImageUrl] = useState('')
   const [confirmationImageTitle, setConfirmationImageTitle] = useState('')
   const [confirmationImageLoadingId, setConfirmationImageLoadingId] = useState<number | null>(null)
@@ -821,6 +840,89 @@ export default function OrderDetailPage() {
       setDesignCardPhone(defaultPhone)
     }
   }, [order, designCardPhone])
+
+
+  useEffect(() => {
+    if (!designCardFile) {
+      setDesignCardPreviewUrl('')
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(designCardFile)
+    setDesignCardPreviewUrl(previewUrl)
+
+    return () => {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [designCardFile])
+
+  useEffect(() => {
+    if (confirmations.length === 0) {
+      setConfirmationThumbUrls({})
+      return
+    }
+
+    const token = window.localStorage.getItem('smilecad_token') || ''
+    if (!token) return
+
+    let cancelled = false
+
+    const loadThumbs = async () => {
+      try {
+        setConfirmationThumbLoading(true)
+
+        const entries = await Promise.all(
+          confirmations.map(async (confirmation) => {
+            const confirmationId = getConfirmationId(confirmation)
+            const key = String(confirmationId || getConfirmationUrl(confirmation) || Math.random())
+            const confirmationToken = getConfirmationToken(confirmation)
+
+            if (!confirmationToken) return null
+
+            try {
+              const res = await fetch(GET_CONFIRMATION_API_URL, {
+                method: 'POST',
+                cache: 'no-store',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  token: confirmationToken,
+                  confirmation_token: confirmationToken,
+                  authToken: token,
+                }),
+              })
+
+              const data = await parseJsonResponse(res)
+              const imageUrl = data?.image_url || data?.imageUrl || data?.url
+
+              if (!res.ok || !data?.success || !imageUrl) return null
+
+              return [key, imageUrl] as const
+            } catch (err) {
+              console.error('디자인 확인서 썸네일 조회 실패:', err)
+              return null
+            }
+          })
+        )
+
+        if (cancelled) return
+
+        setConfirmationThumbUrls(
+          Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, string]>)
+        )
+      } finally {
+        if (!cancelled) setConfirmationThumbLoading(false)
+      }
+    }
+
+    loadThumbs()
+
+    return () => {
+      cancelled = true
+    }
+  }, [confirmations])
 
   const handleStatusUpdate = async (newStatus: string) => {
     if (!id) return
@@ -1029,7 +1131,7 @@ export default function OrderDetailPage() {
         uploadData.image_bucket ||
         uploadData.imageBucket ||
         uploadData.bucket ||
-        'smilecad-design-cards'
+        'smilecad-design-cards-v2'
 
       if (!uploadUrl || !imageObjectKey) {
         throw new Error('디자인 확인서 업로드 URL 또는 파일 키를 확인할 수 없습니다.')
@@ -1311,9 +1413,9 @@ export default function OrderDetailPage() {
       .filter((item: any) => item.label)
 
     if (normalizedHistory.length === 0) {
-      const currentStatus = order?.status || '접수 대기'
+      const currentStatus = getDisplayOrderStatus(order?.status)
 
-      if (currentStatus && currentStatus !== '접수 대기') {
+      if (currentStatus && currentStatus !== '주문 접수') {
         return [
           baseStep,
           {
@@ -1330,14 +1432,6 @@ export default function OrderDetailPage() {
       return [
         baseStep,
         {
-          label: '접수 대기',
-          time: '대기 중',
-          active: false,
-          done: false,
-          memo: '',
-          changedBy: '',
-        },
-        {
           label: '디자인 작업중',
           time: '대기 중',
           active: false,
@@ -1346,7 +1440,15 @@ export default function OrderDetailPage() {
           changedBy: '',
         },
         {
-          label: '제작 완료',
+          label: '디자인 확인서 발송',
+          time: '대기 중',
+          active: false,
+          done: false,
+          memo: '',
+          changedBy: '',
+        },
+        {
+          label: '제작 진행',
           time: '대기 중',
           active: false,
           done: false,
@@ -1432,7 +1534,7 @@ export default function OrderDetailPage() {
                     order.status
                   )}`}
                 >
-                  {order.status || '접수 대기'}
+                  {getDisplayOrderStatus(order.status)}
                 </span>
               </div>
             </div>
@@ -1477,9 +1579,9 @@ export default function OrderDetailPage() {
           </div>
         </section>
 
-        <section className="mb-7 grid grid-cols-1 gap-7 lg:grid-cols-[360px_1fr]">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-            <div className="mb-8 flex items-center gap-3">
+        <section className="mb-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+          <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
               <div className="text-blue-600">
                 <IconClock />
               </div>
@@ -1488,127 +1590,157 @@ export default function OrderDetailPage() {
               </h2>
             </div>
 
-            <div className="relative space-y-8 pl-10 before:absolute before:left-[10px] before:top-3 before:h-[calc(100%-30px)] before:w-[2px] before:bg-slate-200">
-              {historySteps.map((step) => (
-                <div key={`${step.label}-${step.time}`} className="relative">
-                  <div
-                    className={`absolute -left-[39px] top-1 h-5 w-5 rounded-full border-[3px] ring-4 ring-white ${
-                      step.active
-                        ? 'border-emerald-500 bg-emerald-500 shadow-lg shadow-emerald-100'
-                        : step.done
-                          ? 'border-blue-500 bg-blue-500'
-                          : 'border-slate-300 bg-white'
-                    }`}
-                  />
-
-                  <p
-                    className={`text-[16px] font-black ${
-                      step.active ? 'text-emerald-700' : 'text-slate-800'
-                    }`}
-                  >
-                    {step.label}
-                  </p>
-                  <p className="mt-1 text-[14px] font-semibold text-slate-500">{step.time}</p>
-
-                  {step.memo && (
-                    <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-[13px] font-semibold text-slate-500">
-                      {step.memo}
-                    </p>
-                  )}
-
-                  {step.changedBy && (
-                    <p className="mt-2 text-[12px] font-bold text-slate-400">
-                      처리자: {step.changedBy}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-
             {userRole === 'admin' && (
-              <div className="mt-9 border-t border-slate-100 pt-6">
-                <h3 className="mb-4 text-[15px] font-black text-slate-800">관리자 상태 변경</h3>
-                <div className="grid grid-cols-1 gap-2">
-                  {['접수 대기', '디자인 작업중', '수정 요청 중', '주문 재접수'].map((s) => (
-                    <button
-                      key={s}
-                      disabled={updating || order.status === s}
-                      onClick={() => handleStatusUpdate(s)}
-                      className={`rounded-2xl px-4 py-3 text-[14px] font-black transition-all ${
-                        order.status === s
-                          ? 'bg-slate-900 text-white shadow-md'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-2">
+                {ADMIN_STATUS_OPTIONS.map((s) => (
+                  <button
+                    key={s}
+                    disabled={updating || getDisplayOrderStatus(order.status) === s}
+                    onClick={() => handleStatusUpdate(s)}
+                    className={`rounded-2xl px-4 py-2 text-[13px] font-black transition-all ${
+                      getDisplayOrderStatus(order.status) === s
+                        ? 'bg-slate-900 text-white shadow-md'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-            <div className="mb-7 flex items-center gap-3">
-              <div className="text-blue-600">
-                <IconDocument />
-              </div>
-              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
-                주문 상세 정보
-              </h2>
-            </div>
-
-            <div className="border-t border-slate-200">
-              <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-4 md:divide-x md:divide-y-0">
-                {[
-                  { label: '환자명', value: order.patient_name },
-                  { label: '희망 완료일', value: formatDate(order.delivery_date) },
-                  { label: '치과명', value: order.clinic_name },
-                  { label: '주문 생성일', value: getOrderCreatedDateTime(order) },
-                ].map((item) => (
-                  <div key={item.label} className="px-0 py-5 md:px-7">
-                    <p className="text-[13px] font-bold text-slate-500">{item.label}</p>
-                    <p className="mt-3 text-[16px] font-black text-slate-950">
-                      {item.value || '-'}
-                    </p>
+          <div className="overflow-x-auto pb-2">
+            <div className="flex min-w-max items-stretch gap-4">
+              {historySteps.map((step, index) => (
+                <div key={`${step.label}-${step.time}`} className="flex items-center gap-4">
+                  <div
+                    className={`min-w-[220px] rounded-2xl border p-4 ${
+                      step.active
+                        ? 'border-emerald-200 bg-emerald-50'
+                        : step.done
+                          ? 'border-blue-100 bg-blue-50/50'
+                          : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`h-3 w-3 rounded-full ${
+                          step.active
+                            ? 'bg-emerald-500'
+                            : step.done
+                              ? 'bg-blue-500'
+                              : 'bg-slate-300'
+                        }`}
+                      />
+                      <p
+                        className={`text-[15px] font-black ${
+                          step.active ? 'text-emerald-700' : 'text-slate-800'
+                        }`}
+                      >
+                        {step.label}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-[13px] font-semibold text-slate-500">{step.time}</p>
+                    {step.memo && (
+                      <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-[12px] font-semibold text-slate-500">
+                        {step.memo}
+                      </p>
+                    )}
+                    {step.changedBy && (
+                      <p className="mt-2 text-[12px] font-bold text-slate-400">
+                        처리자: {step.changedBy}
+                      </p>
+                    )}
                   </div>
-                ))}
-              </div>
 
-              <div className="border-t border-slate-100 py-5">
-                <p className="text-[13px] font-bold text-slate-500">치과 주소</p>
-                <p className="mt-3 text-[16px] font-black leading-relaxed text-slate-950">
-                  {order.clinic_address || '-'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 border-t border-slate-100 md:grid-cols-3 md:divide-x md:divide-slate-100">
-                <div className="px-0 py-5 md:px-7">
-                  <p className="text-[13px] font-bold text-slate-500">지그 제작</p>
-                  <span className="mt-3 inline-flex rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-1.5 text-[14px] font-black text-emerald-700">
-                    {order.jig_required || '-'}
-                  </span>
+                  {index < historySteps.length - 1 && (
+                    <div className="h-px w-8 shrink-0 bg-slate-200" />
+                  )}
                 </div>
-
-                <div className="px-0 py-5 md:px-7">
-                  <p className="text-[13px] font-bold text-slate-500">와이어 두께</p>
-                  <span className="mt-3 inline-flex rounded-lg border border-blue-100 bg-blue-50 px-4 py-1.5 text-[14px] font-black text-blue-700">
-                    {order.thickness || '-'}
-                  </span>
-                </div>
-
-                <div className="px-0 py-5 md:px-7">
-                  <p className="text-[13px] font-bold text-slate-500">요청사항</p>
-                  <p className="mt-3 whitespace-pre-wrap text-[16px] font-black leading-relaxed text-slate-950">
-                    {order.request_note || '-'}
-                  </p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </section>
 
-        <section className="mb-7 grid grid-cols-1 gap-7 lg:grid-cols-[1fr_420px]">
+        <section className="mb-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
+          <div className="mb-7 flex items-center gap-3">
+            <div className="text-blue-600">
+              <IconDocument />
+            </div>
+            <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+              주문 상세 정보
+            </h2>
+          </div>
+
+          <div className="border-t border-slate-200">
+            <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+              {[
+                { label: '환자명', value: order.patient_name },
+                { label: '희망 완료일', value: formatDate(order.delivery_date) },
+                { label: '치과명', value: order.clinic_name },
+                { label: '주문 생성일', value: getOrderCreatedDateTime(order) },
+              ].map((item) => (
+                <div key={item.label} className="px-0 py-5 md:px-7">
+                  <p className="text-[13px] font-bold text-slate-500">{item.label}</p>
+                  <p className="mt-3 text-[16px] font-black text-slate-950">
+                    {item.value || '-'}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 border-t border-slate-100 md:grid-cols-3 md:divide-x md:divide-slate-100">
+              <div className="px-0 py-5 md:px-7">
+                <p className="text-[13px] font-bold text-slate-500">지그 제작</p>
+                <span className="mt-3 inline-flex rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-1.5 text-[14px] font-black text-emerald-700">
+                  {order.jig_required || '-'}
+                </span>
+              </div>
+
+              <div className="px-0 py-5 md:px-7">
+                <p className="text-[13px] font-bold text-slate-500">와이어 두께</p>
+                <span className="mt-3 inline-flex rounded-lg border border-blue-100 bg-blue-50 px-4 py-1.5 text-[14px] font-black text-blue-700">
+                  {order.thickness || '-'}
+                </span>
+              </div>
+
+              <div className="px-0 py-5 md:px-7">
+                <p className="text-[13px] font-bold text-slate-500">요청사항</p>
+                <p className="mt-3 whitespace-pre-wrap text-[16px] font-black leading-relaxed text-slate-950">
+                  {order.request_note || '-'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 border-t border-slate-100 py-5 xl:grid-cols-2">
+              <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
+                <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
+                <ToothSummaryRows teeth={selectedTeethList} tone="blue" keyPrefix="detail-selected" />
+                <p className="mt-4 text-[14px] font-black text-blue-700">
+                  범위 총 {selectedToothCount}개
+                </p>
+              </div>
+
+              <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
+                <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
+                <ToothSummaryRows teeth={billableTeethList} tone="emerald" keyPrefix="detail-billable" />
+                <p className="mt-4 text-[14px] font-black text-emerald-700">
+                  총 {billableToothCount}개
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 py-5">
+              <p className="text-[13px] font-bold text-slate-500">치과 주소</p>
+              <p className="mt-3 text-[16px] font-black leading-relaxed text-slate-950">
+                {order.clinic_address || '-'}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-7 space-y-7">
           <div className="rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
             <div className="mb-7 flex items-center gap-3">
               <div className="text-blue-600">
@@ -1619,38 +1751,18 @@ export default function OrderDetailPage() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
               <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
                 <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
-                <ToothSummaryRows
-                  teeth={selectedTeethList}
-                  tone="blue"
-                  keyPrefix="selected"
-                />
+                <ToothSummaryRows teeth={selectedTeethList} tone="blue" keyPrefix="selected" />
                 <p className="mt-4 text-[14px] font-black text-blue-700">
                   범위 총 {selectedToothCount}개
                 </p>
               </div>
 
-              <div className="rounded-[22px] border border-red-100 bg-red-50 p-5">
-                <p className="text-[13px] font-black text-red-500">없는 치아 / 발치 치아</p>
-                <ToothSummaryRows
-                  teeth={missingTeethList}
-                  tone="red"
-                  keyPrefix="missing"
-                />
-                <p className="mt-4 text-[14px] font-black text-red-500">
-                  제외 {missingToothCount}개
-                </p>
-              </div>
-
               <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
                 <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
-                <ToothSummaryRows
-                  teeth={billableTeethList}
-                  tone="emerald"
-                  keyPrefix="billable"
-                />
+                <ToothSummaryRows teeth={billableTeethList} tone="emerald" keyPrefix="billable" />
                 <p className="mt-4 text-[14px] font-black text-emerald-700">
                   총 {billableToothCount}개
                 </p>
@@ -1717,55 +1829,59 @@ export default function OrderDetailPage() {
               주문 금액
             </h2>
 
-            <div className="rounded-[24px] bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-lg shadow-blue-100">
-              <p className="text-[13px] font-black text-blue-100">총 주문 금액</p>
-              <p className="mt-3 text-[34px] font-black tracking-[-0.04em]">
-                {formatMoney(priceDetailItems.totalPrice)}
-              </p>
-            </div>
-
-            <div className="mt-5 space-y-3 rounded-[22px] border border-slate-100 bg-slate-50 p-5">
-              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
-                <span className="text-slate-500">제품 기본 금액</span>
-                <span className="text-slate-950">
-                  {formatMoney(priceDetailItems.productBasePrice)}
-                </span>
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[360px_1fr]">
+              <div className="rounded-[24px] bg-gradient-to-br from-blue-600 to-blue-700 p-6 text-white shadow-lg shadow-blue-100">
+                <p className="text-[13px] font-black text-blue-100">총 주문 금액</p>
+                <p className="mt-3 text-[34px] font-black tracking-[-0.04em]">
+                  {formatMoney(priceDetailItems.totalPrice)}
+                </p>
               </div>
 
-              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
-                <span className="text-slate-500">청구 치아 수 조정</span>
-                <span
-                  className={
-                    priceDetailItems.toothAdjustmentPrice > 0
-                      ? 'text-red-500'
-                      : priceDetailItems.toothAdjustmentPrice < 0
-                        ? 'text-blue-500'
-                        : 'text-slate-950'
-                  }
-                >
-                  {priceDetailItems.toothAdjustmentPrice >= 0 ? '+' : '-'}
-                  {formatMoney(Math.abs(priceDetailItems.toothAdjustmentPrice))}
-                </span>
-              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr]">
+                <div className="space-y-3 rounded-[22px] border border-slate-100 bg-slate-50 p-5">
+                  <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                    <span className="text-slate-500">제품 기본 금액</span>
+                    <span className="text-slate-950">
+                      {formatMoney(priceDetailItems.productBasePrice)}
+                    </span>
+                  </div>
 
-              <div className="flex items-center justify-between gap-4 text-[14px] font-black">
-                <span className="text-slate-500">지그 제작</span>
-                <span className="text-slate-950">+{formatMoney(priceDetailItems.jigPrice)}</span>
-              </div>
+                  <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                    <span className="text-slate-500">청구 치아 수 조정</span>
+                    <span
+                      className={
+                        priceDetailItems.toothAdjustmentPrice > 0
+                          ? 'text-red-500'
+                          : priceDetailItems.toothAdjustmentPrice < 0
+                            ? 'text-blue-500'
+                            : 'text-slate-950'
+                      }
+                    >
+                      {priceDetailItems.toothAdjustmentPrice >= 0 ? '+' : '-'}
+                      {formatMoney(Math.abs(priceDetailItems.toothAdjustmentPrice))}
+                    </span>
+                  </div>
 
-              <div className="border-t border-slate-200 pt-3">
-                <div className="flex items-center justify-between gap-4 text-[16px] font-black">
-                  <span className="text-slate-950">합계</span>
-                  <span className="text-blue-700">{formatMoney(priceDetailItems.totalPrice)}</span>
+                  <div className="flex items-center justify-between gap-4 text-[14px] font-black">
+                    <span className="text-slate-500">지그 제작</span>
+                    <span className="text-slate-950">+{formatMoney(priceDetailItems.jigPrice)}</span>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-3">
+                    <div className="flex items-center justify-between gap-4 text-[16px] font-black">
+                      <span className="text-slate-950">합계</span>
+                      <span className="text-blue-700">{formatMoney(priceDetailItems.totalPrice)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-[18px] bg-slate-50 p-5">
+                  <p className="text-[13px] font-black text-slate-500">가격 산정 기준</p>
+                  <p className="mt-2 text-[13px] font-semibold leading-6 text-slate-600">
+                    {order.price_description || '가격 산정 정보가 없습니다.'}
+                  </p>
                 </div>
               </div>
-            </div>
-
-            <div className="mt-5 rounded-[18px] bg-slate-50 p-5">
-              <p className="text-[13px] font-black text-slate-500">가격 산정 기준</p>
-              <p className="mt-2 text-[13px] font-semibold leading-6 text-slate-600">
-                {order.price_description || '가격 산정 정보가 없습니다.'}
-              </p>
             </div>
           </div>
         </section>
@@ -1813,6 +1929,19 @@ export default function OrderDetailPage() {
                         className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[13px] font-bold text-slate-600 file:mr-4 file:rounded-xl file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-[13px] file:font-black file:text-white disabled:cursor-not-allowed disabled:opacity-60"
                       />
                     </label>
+
+                    {designCardPreviewUrl && (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                        <p className="mb-2 text-[12px] font-black text-slate-500">
+                          선택한 확인서 미리보기
+                        </p>
+                        <img
+                          src={designCardPreviewUrl}
+                          alt="선택한 디자인 확인서 미리보기"
+                          className="max-h-[280px] w-full rounded-xl object-contain"
+                        />
+                      </div>
+                    )}
 
                     <label className="block">
                       <span className="mb-2 block text-[12px] font-black text-slate-500">
@@ -1880,6 +2009,8 @@ export default function OrderDetailPage() {
                   const confirmationId = getConfirmationId(confirmation)
                   const confirmUrl = getConfirmationUrl(confirmation)
                   const revisionNote = getConfirmationRevisionNote(confirmation)
+                  const confirmationKey = String(confirmationId || confirmUrl)
+                  const thumbnailUrl = confirmationThumbUrls[confirmationKey]
 
                   return (
                     <div
@@ -1919,7 +2050,7 @@ export default function OrderDetailPage() {
                             >
                               {confirmationImageLoadingId === (confirmationId || -1)
                                 ? '불러오는 중...'
-                                : '이미지 보기'}
+                                : '크게 보기'}
                             </button>
                           )}
 
@@ -1933,6 +2064,26 @@ export default function OrderDetailPage() {
                             </button>
                           )}
                         </div>
+                      </div>
+
+                      <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                        {thumbnailUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenConfirmationImage(confirmation)}
+                            className="block w-full bg-white p-3 text-left transition hover:bg-blue-50/40"
+                          >
+                            <img
+                              src={thumbnailUrl}
+                              alt={`디자인 확인서 #${confirmationId || '-'} 이미지`}
+                              className="mx-auto max-h-[360px] w-full rounded-xl object-contain"
+                            />
+                          </button>
+                        ) : (
+                          <div className="flex min-h-[120px] items-center justify-center p-5 text-[13px] font-bold text-slate-400">
+                            {confirmationThumbLoading ? '확인서 이미지를 불러오는 중입니다.' : '확인서 이미지 미리보기를 불러오지 못했습니다.'}
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 grid grid-cols-1 gap-3 text-[13px] font-bold md:grid-cols-2">
