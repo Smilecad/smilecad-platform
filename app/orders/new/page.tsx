@@ -797,19 +797,24 @@ function SelectButton({
   selected,
   onClick,
   wide = false,
+  compact = false,
 }: {
   label: string
   selected: boolean
   onClick: () => void
   wide?: boolean
+  compact?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={classNames(
-        'rounded-[16px] border px-4 py-3 text-[14px] font-semibold transition sm:rounded-[18px] sm:px-5 sm:py-4 sm:text-[16px]',
-        wide ? 'w-full' : 'w-full sm:w-[210px]',
+        'rounded-[14px] border text-center font-semibold transition sm:rounded-[16px]',
+        compact
+          ? 'h-11 w-full whitespace-nowrap px-2 py-2 text-[12px] leading-tight sm:h-12 sm:px-2 sm:text-[13px]'
+          : 'px-4 py-3 text-[14px] sm:px-5 sm:py-4 sm:text-[16px]',
+        wide ? 'w-full' : compact ? 'w-full' : 'w-full sm:w-[210px]',
         selected
           ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.18)]'
           : 'border-[#d6dde8] bg-white text-[#4d5968] hover:bg-[#f8fafc]'
@@ -1476,6 +1481,7 @@ export default function NewOrderPage() {
             onSubmit={handleSubmit}
             className="grid grid-cols-1 gap-5 p-4 sm:gap-6 sm:p-6 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start xl:p-8"
           >
+            <div className="min-w-0 space-y-5 xl:col-start-1">
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
               <SectionTitle title="기본 정보" />
 
@@ -1628,6 +1634,120 @@ export default function NewOrderPage() {
               </div>
             </div>
 
+              <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <SectionTitle title="요약 / 예상 금액" />
+
+              <div className="p-4 sm:p-5">
+                <div className="grid gap-3 rounded-[18px] border border-dashed border-[#d8dfe8] bg-[#fbfcfe] p-4 sm:p-5">
+                  <div className="rounded-[14px] bg-white p-4 text-center shadow-sm">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">총 예상 금액</div>
+                    <div className="text-[26px] font-black text-[#2563eb]">{formatMoney(priceInfo.totalPrice)}</div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4">
+                    <div className="mb-3 text-[13px] font-black text-[#475467]">금액 상세</div>
+
+                    <div className="space-y-2 text-[13px] font-bold text-[#667085]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>제품 기본 금액</span>
+                        <span className="text-[#1f2937]">{formatMoney(priceInfo.productBasePrice)}</span>
+                      </div>
+
+                      {productType === 'NT-tainer' && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span>청구 치아 수 조정</span>
+                          <span
+                            className={classNames(
+                              priceInfo.toothAdjustmentPrice > 0 && 'text-red-500',
+                              priceInfo.toothAdjustmentPrice < 0 && 'text-blue-500',
+                              priceInfo.toothAdjustmentPrice === 0 && 'text-[#1f2937]'
+                            )}
+                          >
+                            {priceInfo.toothAdjustmentPrice >= 0 ? '+' : '-'}
+                            {formatMoney(Math.abs(priceInfo.toothAdjustmentPrice))}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span>
+                          지그 제작
+                          {jigRequired === 'Yes' && priceInfo.jigPrice > 0
+                            ? ` (${getJigUnitCount(getBillableTeeth(selectedTeeth, missingTeeth))}악)`
+                            : ''}
+                        </span>
+                        <span className="text-[#1f2937]">+{formatMoney(priceInfo.jigPrice)}</span>
+                      </div>
+
+                      <div className="border-t border-[#e5e9f0] pt-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[#1f2937]">합계</span>
+                          <span className="text-[18px] font-black text-[#2563eb]">
+                            {formatMoney(priceInfo.totalPrice)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-[12px] bg-white p-3 text-[12px] font-semibold leading-5 text-[#98a2b3]">
+                      {priceInfo.priceDescription}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">유형</div>
+                    <div className="text-[15px] font-bold text-[#475467]">{productType || '선택 전'}</div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">제작 범위 치아</div>
+                    <div className="break-words text-[15px] font-bold text-[#475467]">{selectedTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-[#475467]">
+                      범위 총 {priceInfo.selectedToothCount}개
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#fff1f2] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-red-400">없는 치아 / 발치 치아</div>
+                    <div className="break-words text-[15px] font-bold text-red-500">{missingTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-red-500">
+                      제외 {priceInfo.missingToothCount}개
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#eaf2ff] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#2563eb]">실제 청구 치아</div>
+                    <div className="break-words text-[15px] font-bold text-[#1d4ed8]">{billableTeethSummary}</div>
+                    <div className="mt-2 text-[13px] font-black text-[#2563eb]">
+                      총 {priceInfo.toothCount}개
+                    </div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">두께</div>
+                    <div className="text-[15px] font-bold text-[#475467]">{thickness || '선택 전'}</div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">지그 제작 여부</div>
+                    <div className="text-[15px] font-bold text-[#475467]">{jigRequired || '선택 전'}</div>
+                  </div>
+
+                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
+                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">remake 여부</div>
+                    <div className="text-[15px] font-bold text-[#475467]">{isRemake ? 'Yes' : 'No'}</div>
+                    {isRemake && (
+                      <div className="mt-2 break-words text-[12px] font-bold leading-5 text-[#667085]">
+                        {remakeReason.trim() || '사유 미입력'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            </div>
+
             <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#dce3ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
               <SectionTitle
                 title="치아 번호 (영구치) *"
@@ -1740,13 +1860,14 @@ export default function NewOrderPage() {
               </div>
 
               <div className="p-4 sm:p-6">
-                <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {PRODUCT_TYPES.map((type) => (
                     <SelectButton
                       key={type}
                       label={type}
                       selected={productType === type}
                       onClick={() => setProductType(type)}
+                      compact
                     />
                   ))}
                 </div>
@@ -1757,13 +1878,14 @@ export default function NewOrderPage() {
               </div>
 
               <div className="p-4 sm:p-6">
-                <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
                   {THICKNESS_OPTIONS.map((option) => (
                     <SelectButton
                       key={option}
                       label={option}
                       selected={thickness === option}
                       onClick={() => setThickness(option)}
+                      compact
                     />
                   ))}
                 </div>
@@ -1916,117 +2038,6 @@ export default function NewOrderPage() {
               {error && <div className="px-4 pb-6 text-sm font-semibold text-red-600 sm:px-6">{error}</div>}
             </div>
 
-            <div className="min-w-0 overflow-hidden rounded-[22px] border border-[#e1e7ef] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)] xl:col-start-1">
-              <SectionTitle title="요약 / 예상 금액" />
-
-              <div className="p-4 sm:p-5">
-                <div className="grid gap-3 rounded-[18px] border border-dashed border-[#d8dfe8] bg-[#fbfcfe] p-4 sm:p-5">
-                  <div className="rounded-[14px] bg-white p-4 text-center shadow-sm">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">총 예상 금액</div>
-                    <div className="text-[26px] font-black text-[#2563eb]">{formatMoney(priceInfo.totalPrice)}</div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4">
-                    <div className="mb-3 text-[13px] font-black text-[#475467]">금액 상세</div>
-
-                    <div className="space-y-2 text-[13px] font-bold text-[#667085]">
-                      <div className="flex items-center justify-between gap-3">
-                        <span>제품 기본 금액</span>
-                        <span className="text-[#1f2937]">{formatMoney(priceInfo.productBasePrice)}</span>
-                      </div>
-
-                      {productType === 'NT-tainer' && (
-                        <div className="flex items-center justify-between gap-3">
-                          <span>청구 치아 수 조정</span>
-                          <span
-                            className={classNames(
-                              priceInfo.toothAdjustmentPrice > 0 && 'text-red-500',
-                              priceInfo.toothAdjustmentPrice < 0 && 'text-blue-500',
-                              priceInfo.toothAdjustmentPrice === 0 && 'text-[#1f2937]'
-                            )}
-                          >
-                            {priceInfo.toothAdjustmentPrice >= 0 ? '+' : '-'}
-                            {formatMoney(Math.abs(priceInfo.toothAdjustmentPrice))}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between gap-3">
-                        <span>
-                          지그 제작
-                          {jigRequired === 'Yes' && priceInfo.jigPrice > 0
-                            ? ` (${getJigUnitCount(getBillableTeeth(selectedTeeth, missingTeeth))}악)`
-                            : ''}
-                        </span>
-                        <span className="text-[#1f2937]">+{formatMoney(priceInfo.jigPrice)}</span>
-                      </div>
-
-                      <div className="border-t border-[#e5e9f0] pt-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[#1f2937]">합계</span>
-                          <span className="text-[18px] font-black text-[#2563eb]">
-                            {formatMoney(priceInfo.totalPrice)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 rounded-[12px] bg-white p-3 text-[12px] font-semibold leading-5 text-[#98a2b3]">
-                      {priceInfo.priceDescription}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">유형</div>
-                    <div className="text-[15px] font-bold text-[#475467]">{productType || '선택 전'}</div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">제작 범위 치아</div>
-                    <div className="break-words text-[15px] font-bold text-[#475467]">{selectedTeethSummary}</div>
-                    <div className="mt-2 text-[13px] font-black text-[#475467]">
-                      범위 총 {priceInfo.selectedToothCount}개
-                    </div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#fff1f2] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-red-400">없는 치아 / 발치 치아</div>
-                    <div className="break-words text-[15px] font-bold text-red-500">{missingTeethSummary}</div>
-                    <div className="mt-2 text-[13px] font-black text-red-500">
-                      제외 {priceInfo.missingToothCount}개
-                    </div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#eaf2ff] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#2563eb]">실제 청구 치아</div>
-                    <div className="break-words text-[15px] font-bold text-[#1d4ed8]">{billableTeethSummary}</div>
-                    <div className="mt-2 text-[13px] font-black text-[#2563eb]">
-                      총 {priceInfo.toothCount}개
-                    </div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">두께</div>
-                    <div className="text-[15px] font-bold text-[#475467]">{thickness || '선택 전'}</div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">지그 제작 여부</div>
-                    <div className="text-[15px] font-bold text-[#475467]">{jigRequired || '선택 전'}</div>
-                  </div>
-
-                  <div className="rounded-[14px] bg-[#f5f7fb] p-4 text-center">
-                    <div className="mb-2 text-[13px] font-bold text-[#97a0ae]">remake 여부</div>
-                    <div className="text-[15px] font-bold text-[#475467]">{isRemake ? 'Yes' : 'No'}</div>
-                    {isRemake && (
-                      <div className="mt-2 break-words text-[12px] font-bold leading-5 text-[#667085]">
-                        {remakeReason.trim() || '사유 미입력'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
           </form>
         </div>
       </div>
