@@ -510,6 +510,97 @@ function parseTextArray(value: any): string[] {
     .filter(Boolean)
 }
 
+type ToothSummaryTone = 'blue' | 'red' | 'emerald'
+
+function getToothChipClass(tone: ToothSummaryTone) {
+  if (tone === 'red') {
+    return 'rounded-xl bg-white px-3 py-2 text-[14px] font-black text-red-500 shadow-sm'
+  }
+
+  if (tone === 'emerald') {
+    return 'rounded-xl bg-white px-3 py-2 text-[14px] font-black text-emerald-700 shadow-sm'
+  }
+
+  return 'rounded-xl bg-white px-3 py-2 text-[14px] font-black text-blue-700 shadow-sm'
+}
+
+function getToothArchLabelClass(tone: ToothSummaryTone) {
+  if (tone === 'red') {
+    return 'mt-1 w-10 shrink-0 text-[12px] font-black text-red-500'
+  }
+
+  if (tone === 'emerald') {
+    return 'mt-1 w-10 shrink-0 text-[12px] font-black text-emerald-700'
+  }
+
+  return 'mt-1 w-10 shrink-0 text-[12px] font-black text-blue-700'
+}
+
+function splitTeethByArch(teeth: string[]) {
+  const uniqueTeeth = Array.from(
+    new Set(teeth.map((tooth) => String(tooth || '').trim()).filter(Boolean))
+  )
+
+  const target = new Set(uniqueTeeth)
+  const upperOrder = [...PERMANENT_TOP, ...PRIMARY_TOP].map(String)
+  const lowerOrder = [...PERMANENT_BOTTOM, ...PRIMARY_BOTTOM].map(String)
+
+  const upper = upperOrder.filter((tooth) => target.has(tooth))
+  const lower = lowerOrder.filter((tooth) => target.has(tooth))
+  const known = new Set([...upper, ...lower])
+  const other = uniqueTeeth.filter((tooth) => !known.has(tooth))
+
+  return { upper, lower, other }
+}
+
+function ToothSummaryRows({
+  teeth,
+  tone,
+  keyPrefix,
+  emptyLabel = '없음',
+}: {
+  teeth: string[]
+  tone: ToothSummaryTone
+  keyPrefix: string
+  emptyLabel?: string
+}) {
+  const { upper, lower, other } = splitTeethByArch(teeth)
+  const chipClassName = getToothChipClass(tone)
+  const labelClassName = getToothArchLabelClass(tone)
+  const rows = [
+    { label: '상악', teeth: upper },
+    { label: '하악', teeth: lower },
+    { label: '기타', teeth: other },
+  ].filter((row) => row.teeth.length > 0)
+
+  if (rows.length === 0) {
+    return (
+      <div className="mt-4 flex flex-wrap gap-2">
+        <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
+          {emptyLabel}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {rows.map((row) => (
+        <div key={`${keyPrefix}-${row.label}`} className="flex items-start gap-2">
+          <span className={labelClassName}>{row.label}</span>
+          <div className="flex flex-wrap gap-2">
+            {row.teeth.map((tooth) => (
+              <span key={`${keyPrefix}-${row.label}-${tooth}`} className={chipClassName}>
+                {tooth}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function numberOrZero(value: any) {
   const numeric = Number(value || 0)
   return Number.isFinite(numeric) ? numeric : 0
@@ -1531,22 +1622,11 @@ export default function OrderDetailPage() {
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
               <div className="rounded-[22px] border border-blue-100 bg-blue-50 p-5">
                 <p className="text-[13px] font-black text-blue-600">제작 범위 치아</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {selectedTeethList.length > 0 ? (
-                    selectedTeethList.map((tooth) => (
-                      <span
-                        key={`selected-${tooth}`}
-                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-blue-700 shadow-sm"
-                      >
-                        {tooth}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
-                      없음
-                    </span>
-                  )}
-                </div>
+                <ToothSummaryRows
+                  teeth={selectedTeethList}
+                  tone="blue"
+                  keyPrefix="selected"
+                />
                 <p className="mt-4 text-[14px] font-black text-blue-700">
                   범위 총 {selectedToothCount}개
                 </p>
@@ -1554,22 +1634,11 @@ export default function OrderDetailPage() {
 
               <div className="rounded-[22px] border border-red-100 bg-red-50 p-5">
                 <p className="text-[13px] font-black text-red-500">없는 치아 / 발치 치아</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {missingTeethList.length > 0 ? (
-                    missingTeethList.map((tooth) => (
-                      <span
-                        key={`missing-${tooth}`}
-                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-red-500 shadow-sm"
-                      >
-                        {tooth}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
-                      없음
-                    </span>
-                  )}
-                </div>
+                <ToothSummaryRows
+                  teeth={missingTeethList}
+                  tone="red"
+                  keyPrefix="missing"
+                />
                 <p className="mt-4 text-[14px] font-black text-red-500">
                   제외 {missingToothCount}개
                 </p>
@@ -1577,22 +1646,11 @@ export default function OrderDetailPage() {
 
               <div className="rounded-[22px] border border-emerald-100 bg-emerald-50 p-5">
                 <p className="text-[13px] font-black text-emerald-600">실제 청구 치아</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {billableTeethList.length > 0 ? (
-                    billableTeethList.map((tooth) => (
-                      <span
-                        key={`billable-${tooth}`}
-                        className="rounded-xl bg-white px-3 py-2 text-[14px] font-black text-emerald-700 shadow-sm"
-                      >
-                        {tooth}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="rounded-xl bg-white px-3 py-2 text-[14px] font-bold text-slate-500">
-                      없음
-                    </span>
-                  )}
-                </div>
+                <ToothSummaryRows
+                  teeth={billableTeethList}
+                  tone="emerald"
+                  keyPrefix="billable"
+                />
                 <p className="mt-4 text-[14px] font-black text-emerald-700">
                   총 {billableToothCount}개
                 </p>
