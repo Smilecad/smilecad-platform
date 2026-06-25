@@ -112,6 +112,44 @@ const CREATE_BILLING_STATEMENT_PDF_API_URL =
 const DEFAULT_BILLING_ERROR =
   '명세서 정보를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
 
+
+const BILLING_STATUS_FILTERS = [
+  '전체',
+  '주문 접수',
+  '디자인 작업중',
+  '디자인 확인서 발송',
+  '수정 요청 중',
+  '제작 진행',
+]
+
+function getDisplayStatus(status?: string | null) {
+  const value = String(status || '').trim()
+
+  if (!value || value === '접수 대기') return '주문 접수'
+  if (value === '주문 재접수') return '수정 요청 중'
+  if (value === '제작 완료') return '제작 진행'
+
+  return value
+}
+
+function statusBadgeClass(status?: string | null) {
+  const value = getDisplayStatus(status)
+
+  if (value.includes('제작 진행') || value.includes('완료')) {
+    return 'border-emerald-100 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('디자인') || value.includes('작업') || value.includes('확인서')) {
+    return 'border-amber-100 bg-amber-50 text-amber-700'
+  }
+
+  if (value.includes('수정') || value.includes('재접수')) {
+    return 'border-orange-100 bg-orange-50 text-orange-700'
+  }
+
+  return 'border-blue-100 bg-blue-50 text-blue-700'
+}
+
 const UPPER_TEETH = new Set([
   '11', '12', '13', '14', '15', '16', '17', '18',
   '21', '22', '23', '24', '25', '26', '27', '28',
@@ -455,6 +493,8 @@ export default function BillingPage() {
   const [startDate, setStartDate] = useState(getMonthStartDate())
   const [endDate, setEndDate] = useState(getTodayDate())
   const [selectedClinicName, setSelectedClinicName] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState('전체')
+  const [patientSearch, setPatientSearch] = useState('')
 
   const [summary, setSummary] = useState<BillingSummary>({
     orderCount: 0,
@@ -507,6 +547,14 @@ export default function BillingPage() {
 
       if (selectedClinicName) {
         url.searchParams.set('clinicName', selectedClinicName)
+      }
+
+      if (selectedStatus && selectedStatus !== '전체') {
+        url.searchParams.set('status', selectedStatus)
+      }
+
+      if (patientSearch.trim()) {
+        url.searchParams.set('patientName', patientSearch.trim())
       }
 
       const res = await fetch(url.toString(), {
@@ -573,7 +621,7 @@ export default function BillingPage() {
     } finally {
       setLoading(false)
     }
-  }, [router, startDate, endDate, selectedClinicName])
+  }, [router, startDate, endDate, selectedClinicName, selectedStatus, patientSearch])
 
   useEffect(() => {
     fetchBillingSummary()
@@ -591,6 +639,8 @@ export default function BillingPage() {
     setStartDate('')
     setEndDate('')
     setSelectedClinicName('')
+    setSelectedStatus('전체')
+    setPatientSearch('')
   }
 
   const createStatementPdf = async () => {
@@ -662,6 +712,8 @@ export default function BillingPage() {
           startDate,
           endDate,
           clinicName: isAdmin ? selectedClinicName : '',
+          status: selectedStatus !== '전체' ? selectedStatus : '',
+          patientName: patientSearch.trim(),
         }),
       })
 
@@ -793,12 +845,28 @@ export default function BillingPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[420px]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-w-[720px] xl:grid-cols-4">
               <div className="rounded-[20px] bg-[#f8fafc] p-4">
                 <div className="text-[12px] font-bold text-[#98a2b3]">주문 수</div>
                 <div className="mt-2 text-[26px] font-black text-[#111827]">
                   {summary.orderCount}
                   <span className="ml-1 text-[14px] font-bold text-[#667085]">건</span>
+                </div>
+              </div>
+
+              <div className="rounded-[20px] bg-[#f8fafc] p-4">
+                <div className="text-[12px] font-bold text-[#98a2b3]">실제 청구 치아</div>
+                <div className="mt-2 text-[26px] font-black text-[#111827]">
+                  {summary.totalBillableToothCount}
+                  <span className="ml-1 text-[14px] font-bold text-[#667085]">개</span>
+                </div>
+              </div>
+
+              <div className="rounded-[20px] bg-[#f8fafc] p-4">
+                <div className="text-[12px] font-bold text-[#98a2b3]">없는/발치 치아</div>
+                <div className="mt-2 text-[26px] font-black text-[#111827]">
+                  {summary.totalMissingToothCount}
+                  <span className="ml-1 text-[14px] font-bold text-[#667085]">개</span>
                 </div>
               </div>
 
@@ -813,7 +881,7 @@ export default function BillingPage() {
         </section>
 
         <section className="mb-6 rounded-[24px] border border-[#d9e0ea] bg-white p-5 shadow-sm sm:p-6">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto_auto_auto] lg:items-end">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto_auto_auto] lg:items-end">
             <div>
               <label className="mb-2 block text-[13px] font-bold text-[#475467]">
                 시작일
@@ -866,6 +934,36 @@ export default function BillingPage() {
                 </div>
               </div>
             )}
+
+            <div>
+              <label className="mb-2 block text-[13px] font-bold text-[#475467]">
+                상태
+              </label>
+              <select
+                value={selectedStatus}
+                onChange={(event) => setSelectedStatus(event.target.value)}
+                className="h-12 w-full rounded-[14px] border border-[#d6dde8] bg-[#f8fafc] px-4 text-[14px] font-semibold text-[#475467] outline-none transition focus:border-[#3b82f6] focus:bg-white"
+              >
+                {BILLING_STATUS_FILTERS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-[13px] font-bold text-[#475467]">
+                환자명 검색
+              </label>
+              <input
+                type="text"
+                value={patientSearch}
+                onChange={(event) => setPatientSearch(event.target.value)}
+                placeholder="예: 홍길동"
+                className="h-12 w-full rounded-[14px] border border-[#d6dde8] bg-[#f8fafc] px-4 text-[14px] font-semibold text-[#475467] outline-none transition focus:border-[#3b82f6] focus:bg-white"
+              />
+            </div>
 
             <button
               type="button"
@@ -933,6 +1031,8 @@ export default function BillingPage() {
                     <tr className="text-left text-[12px] font-black uppercase tracking-wide text-[#98a2b3]">
                       <th className="px-4 py-2">치과명</th>
                       <th className="px-4 py-2 text-right">주문 수</th>
+                      <th className="px-4 py-2 text-right">청구 치아</th>
+                      <th className="px-4 py-2 text-right">없는/발치</th>
                       <th className="px-4 py-2 text-right">합계 금액</th>
                     </tr>
                   </thead>
@@ -944,6 +1044,12 @@ export default function BillingPage() {
                         </td>
                         <td className="px-4 py-4 text-right text-[14px] font-bold text-[#475467]">
                           {clinic.order_count}건
+                        </td>
+                        <td className="px-4 py-4 text-right text-[14px] font-bold text-[#475467]">
+                          {clinic.total_billable_tooth_count}개
+                        </td>
+                        <td className="px-4 py-4 text-right text-[14px] font-bold text-[#475467]">
+                          {clinic.total_missing_tooth_count}개
                         </td>
                         <td className="rounded-r-[14px] px-4 py-4 text-right text-[15px] font-black text-[#2563eb]">
                           {formatMoney(clinic.total_price)}
@@ -1004,6 +1110,11 @@ export default function BillingPage() {
                         >
                           {row.itemName}
                         </button>
+                        <div className="mt-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black ${statusBadgeClass(orders.find((order) => String(order.id) === String(row.orderId))?.status)}`}>
+                            {getDisplayStatus(orders.find((order) => String(order.id) === String(row.orderId))?.status)}
+                          </span>
+                        </div>
                       </td>
 
                       <td className="px-4 py-4 text-center text-[13px] font-bold text-[#475467]">
