@@ -385,7 +385,7 @@ export default function OrdersPage() {
                 type="text"
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
-                placeholder="예: 이시현"
+                placeholder="예: 홍길동"
                 className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] font-semibold text-[#475467] outline-none focus:border-[#9db7ff] focus:bg-white"
               />
             </div>
