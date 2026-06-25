@@ -160,12 +160,53 @@ export default function AppTopNav({ current }: { current?: string }) {
     return current === item.id || current === item.path.substring(1)
   }
 
+  const arrayBufferToBase64Url = (buffer: ArrayBuffer | null) => {
+    if (!buffer) return ''
+
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+
+    for (let i = 0; i < bytes.byteLength; i += 1) {
+      binary += String.fromCharCode(bytes[i])
+    }
+
+    return window
+      .btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '')
+  }
+
   const saveSubscription = async (subscription: PushSubscription) => {
     const token = window.localStorage.getItem('smilecad_token')
 
     if (!token) {
       router.replace('/login?force=1')
       return
+    }
+
+    const jsonSubscription = subscription.toJSON() as {
+      endpoint?: string
+      expirationTime?: number | null
+      keys?: {
+        p256dh?: string
+        auth?: string
+      }
+    }
+
+    const endpoint = subscription.endpoint || jsonSubscription.endpoint || ''
+    const p256dh =
+      jsonSubscription.keys?.p256dh || arrayBufferToBase64Url(subscription.getKey('p256dh'))
+    const auth = jsonSubscription.keys?.auth || arrayBufferToBase64Url(subscription.getKey('auth'))
+
+    if (!endpoint || !p256dh || !auth) {
+      console.error('푸시 구독 정보 생성 실패:', {
+        hasEndpoint: Boolean(endpoint),
+        hasP256dh: Boolean(p256dh),
+        hasAuth: Boolean(auth),
+        jsonSubscription,
+      })
+      throw new Error('브라우저 푸시 구독 정보를 생성하지 못했습니다.')
     }
 
     const response = await fetch(SAVE_PUSH_SUBSCRIPTION_API_URL, {
@@ -176,8 +217,23 @@ export default function AppTopNav({ current }: { current?: string }) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        subscription,
+        endpoint,
+        p256dh,
+        auth,
+        keys: {
+          p256dh,
+          auth,
+        },
+        subscription: {
+          endpoint,
+          expirationTime: jsonSubscription.expirationTime || null,
+          keys: {
+            p256dh,
+            auth,
+          },
+        },
         userAgent: window.navigator.userAgent,
+        platform: window.navigator.platform || '',
       }),
     })
 
