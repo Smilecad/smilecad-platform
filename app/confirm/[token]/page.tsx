@@ -58,7 +58,7 @@ function getStatusLabel(status?: ConfirmationStatus) {
 
 function getStatusDescription(status?: ConfirmationStatus) {
   if (status === 'pending') {
-    return '디자인 확인서를 검토하신 뒤 확정 또는 수정 요청을 선택해 주세요.'
+    return '디자인 확인하신 뒤 확정 또는 수정 요청을 선택해주세요.'
   }
 
   if (status === 'confirmed') {
@@ -204,10 +204,10 @@ export default function ConfirmPage() {
         <div className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="mb-2 text-sm font-semibold text-blue-600">NT-Tainer 디자인 확인서</div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            디자인 확인서 검토
+            디자인 확인 부탁드립니다.
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            치과에서 디자인 내용을 확인하고 확정 또는 수정 요청을 남기는 페이지입니다.
+            디자인 확인하신 뒤 확정 또는 수정 요청을 선택해주세요.
           </p>
         </div>
 
