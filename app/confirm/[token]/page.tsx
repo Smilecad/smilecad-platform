@@ -206,9 +206,6 @@ export default function ConfirmPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             디자인 확인 부탁드립니다.
           </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            디자인 확인하신 뒤 확정 또는 수정 요청을 선택해주세요.
-          </p>
         </div>
 
         {loading ? (
@@ -226,7 +223,7 @@ export default function ConfirmPage() {
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-500">주문번호</div>
-                  <div className="mt-1 text-xl font-bold text-slate-900">#{orderId}</div>
+                  <div className="mt-1 text-xl font-bold text-slate-900">{orderId}</div>
                 </div>
 
                 <div
