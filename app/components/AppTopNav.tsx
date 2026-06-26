@@ -83,6 +83,7 @@ export default function AppTopNav({ current }: { current?: string }) {
   const router = useRouter()
   const [isAdmin, setIsAdmin] = useState(false)
   const [pushStatus, setPushStatus] = useState<PushButtonStatus>('checking')
+  const [moreOpen, setMoreOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -145,10 +146,22 @@ export default function AppTopNav({ current }: { current?: string }) {
     []
   )
 
-  const visibleNavItems = navItems.filter((item) => {
+  const availableNavItems = navItems.filter((item) => {
     if (item.adminOnly) return isAdmin
     return true
   })
+
+  const primaryNavItems = availableNavItems.filter((item) => {
+    if (isAdmin) {
+      return ['orders', 'admin-confirmations'].includes(item.id)
+    }
+
+    return ['orders', 'profile', 'inquiry'].includes(item.id)
+  })
+
+  const moreNavItems = availableNavItems.filter(
+    (item) => !primaryNavItems.some((primaryItem) => primaryItem.id === item.id)
+  )
 
   const handleLogout = () => {
     window.localStorage.removeItem('smilecad_token')
@@ -159,6 +172,20 @@ export default function AppTopNav({ current }: { current?: string }) {
   const isActive = (item: { id: string; path: string }) => {
     return current === item.id || current === item.path.substring(1)
   }
+
+  const isMoreActive = moreNavItems.some((item) => isActive(item))
+
+  const moveTo = (path: string) => {
+    setMoreOpen(false)
+    router.push(path)
+  }
+
+  const navButtonClass = (item: NavItem) =>
+    `h-9 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
+      isActive(item)
+        ? 'bg-[#1e293b] text-white shadow-md'
+        : 'border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+    }`
 
   const arrayBufferToBase64Url = (buffer: ArrayBuffer | null) => {
     if (!buffer) return ''
@@ -314,15 +341,15 @@ export default function AppTopNav({ current }: { current?: string }) {
   }
 
   return (
-    <header className="mb-8 rounded-[26px] border border-[#e5eaf2] bg-white px-5 py-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] sm:px-7 sm:py-5 lg:mb-10">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+    <header className="mb-6 rounded-[22px] border border-[#e5eaf2] bg-white px-4 py-3.5 shadow-[0_10px_26px_rgba(15,23,42,0.05)] sm:px-5 lg:mb-8">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <button
           type="button"
-          onClick={() => router.push('/orders')}
-          className="flex items-center gap-3 text-left"
+          onClick={() => moveTo('/orders')}
+          className="flex shrink-0 items-center gap-3 text-left"
         >
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.24)]">
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.22)]">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
               <path
                 d="M12 21C12 21 18 15.8 18 9.8C18 6.5 15.3 4 12 4C8.7 4 6 6.5 6 9.8C6 15.8 12 21 12 21Z"
                 fill="currentColor"
@@ -332,37 +359,69 @@ export default function AppTopNav({ current }: { current?: string }) {
           </div>
 
           <div className="min-w-0">
-            <div className="whitespace-nowrap text-[23px] font-black leading-none tracking-[-0.04em] text-[#111827] sm:text-[26px]">
+            <div className="whitespace-nowrap text-[22px] font-black leading-none tracking-[-0.04em] text-[#111827] sm:text-[24px]">
               SmileCAD
-              <span className="ml-1 text-[14px] font-black text-[#94a3b8] sm:text-[16px]">
+              <span className="ml-1 text-[13px] font-black text-[#94a3b8] sm:text-[14px]">
                 Platform
               </span>
             </div>
           </div>
         </button>
 
-        <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
-          {visibleNavItems.map((item) => (
+        <nav className="flex flex-wrap items-center gap-1.5 xl:justify-end">
+          {primaryNavItems.map((item) => (
             <button
               key={item.id}
               type="button"
-              onClick={() => router.push(item.path)}
-              className={`min-h-[42px] rounded-[14px] px-4 py-2 text-[14px] font-black transition-all ${
-                isActive(item)
-                  ? 'bg-[#1e293b] text-white shadow-md'
-                  : 'border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
-              }`}
+              onClick={() => moveTo(item.path)}
+              className={navButtonClass(item)}
             >
               {item.name}
             </button>
           ))}
+
+          {moreNavItems.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMoreOpen((open) => !open)}
+                className={`inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
+                  isMoreActive || moreOpen
+                    ? 'bg-[#1e293b] text-white shadow-md'
+                    : 'border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+                }`}
+              >
+                더보기
+                <span className={`text-[10px] transition ${moreOpen ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+
+              {moreOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-[180px] overflow-hidden rounded-[16px] border border-[#e2e8f0] bg-white p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+                  {moreNavItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => moveTo(item.path)}
+                      className={`flex w-full items-center rounded-[11px] px-3 py-2.5 text-left text-[13px] font-black transition ${
+                        isActive(item)
+                          ? 'bg-[#1e293b] text-white'
+                          : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+                      }`}
+                    >
+                      {item.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
             onClick={handleEnablePush}
             disabled={pushStatus === 'checking' || pushStatus === 'subscribing' || pushStatus === 'unsupported'}
             title={getPushButtonTitle(pushStatus)}
-            className={`inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-[14px] px-4 py-2 text-[14px] font-black transition-all ${
+            className={`inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
               pushStatus === 'enabled'
                 ? 'border border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                 : pushStatus === 'denied' || pushStatus === 'error' || pushStatus === 'missing-key'
@@ -381,7 +440,7 @@ export default function AppTopNav({ current }: { current?: string }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="min-h-[42px] rounded-[14px] border border-[#e2e8f0] bg-white px-4 py-2 text-[14px] font-black text-[#64748b] transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500 sm:col-span-1"
+            className="h-9 whitespace-nowrap rounded-[12px] border border-[#e2e8f0] bg-white px-3.5 text-[13px] font-black text-[#64748b] transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500"
           >
             로그아웃
           </button>
