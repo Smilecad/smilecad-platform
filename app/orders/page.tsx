@@ -120,22 +120,56 @@ function getDisplayStatus(status?: string | null) {
   return value
 }
 
+function getPlainPatientName(name?: string | null) {
+  return String(name || '-')
+    .replace(/\s*환자님\s*$/g, '')
+    .replace(/\s*환자\s*$/g, '')
+    .trim() || '-'
+}
+
 function statusBadgeClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  }
-
-  if (value.includes('확인서') || value.includes('디자인') || value.includes('작업')) {
-    return 'border-amber-200 bg-amber-50 text-amber-700'
+    return 'border-blue-200 bg-blue-50 text-blue-700'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
-    return 'border-orange-200 bg-orange-50 text-orange-700'
+    return 'border-red-200 bg-red-50 text-red-700'
   }
 
-  return 'border-blue-200 bg-blue-50 text-blue-700'
+  if (value.includes('확인서')) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('디자인') || value.includes('작업')) {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
+  }
+
+  return 'border-slate-200 bg-white text-slate-700'
+}
+
+function orderCardClass(status?: string | null) {
+  const value = getDisplayStatus(status)
+  const base = 'grid cursor-pointer grid-cols-1 gap-3 rounded-[16px] border px-4 py-3 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_22px_rgba(59,130,246,0.12)] focus:outline-none focus:ring-4 focus:ring-blue-100 lg:grid-cols-[64px_120px_140px_minmax(160px,1.2fr)_140px_minmax(180px,1.2fr)_150px] lg:items-center lg:gap-4'
+
+  if (value.includes('제작 진행') || value.includes('완료')) {
+    return `${base} border-blue-100 bg-blue-50/70`
+  }
+
+  if (value.includes('수정') || value.includes('재접수')) {
+    return `${base} border-red-100 bg-red-50/70`
+  }
+
+  if (value.includes('확인서')) {
+    return `${base} border-emerald-100 bg-emerald-50/70`
+  }
+
+  if (value.includes('디자인') || value.includes('작업')) {
+    return `${base} border-amber-100 bg-amber-50/70`
+  }
+
+  return `${base} border-[#e1e7ef] bg-white`
 }
 
 function extractDateKey(value?: string | null) {
@@ -437,15 +471,27 @@ export default function OrdersPage() {
           </div>
         )}
 
-        <div className="overflow-hidden rounded-[24px] border border-[#d9e0ea] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:rounded-[28px] sm:p-8">
+        <div className="overflow-hidden rounded-[22px] border border-[#d9e0ea] bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-5">
           {filteredOrders.length === 0 ? (
             <div className="flex min-h-[210px] items-center justify-center px-4 py-16 text-center text-[15px] font-semibold text-[#98a2b3]">
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="sticky top-0 z-10 hidden rounded-[14px] border border-[#e7edf5] bg-[#f8fafc]/95 px-4 py-3 text-[12px] font-black text-[#667085] backdrop-blur lg:grid lg:grid-cols-[64px_120px_140px_minmax(160px,1.2fr)_140px_minmax(180px,1.2fr)_150px] lg:items-center lg:gap-4">
+                <div className="text-center">번호</div>
+                <div>접수일</div>
+                <div>희망 납기일</div>
+                <div>환자명</div>
+                <div>제품유형</div>
+                <div>치과명</div>
+                <div className="text-center">현재 상태</div>
+              </div>
+
               {filteredOrders.map((order, index) => {
                 const orderIndex = filteredOrders.length - index
+                const displayStatus = getDisplayStatus(order.status)
+                const patientName = getPlainPatientName(order.patient_name)
 
                 return (
                   <div
@@ -459,10 +505,10 @@ export default function OrdersPage() {
                         router.push(`/orders/${order.id}`)
                       }
                     }}
-                    className="grid cursor-pointer grid-cols-1 gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] focus:outline-none focus:ring-4 focus:ring-blue-100 lg:grid-cols-[70px_100px_minmax(210px,1.2fr)_150px_150px_minmax(240px,1.4fr)_130px] lg:items-center lg:gap-5"
+                    className={orderCardClass(order.status)}
                   >
-                    <div className="flex items-start gap-3 lg:justify-center">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[15px] font-black text-blue-600">
+                    <div className="flex items-center gap-3 lg:justify-center">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/80 text-[14px] font-black text-blue-600 shadow-sm ring-1 ring-blue-100">
                         {String(orderIndex).padStart(2, '0')}
                       </div>
 
@@ -473,12 +519,12 @@ export default function OrdersPage() {
                               order.status
                             )}`}
                           >
-                            {getDisplayStatus(order.status)}
+                            {displayStatus}
                           </span>
                         </div>
 
-                        <div className="mt-3 text-[17px] font-black leading-tight text-[#1f2937]">
-                          {order.patient_name || '-'} 환자님
+                        <div className="mt-2 text-[16px] font-black leading-tight text-[#1f2937]">
+                          {patientName}
                         </div>
 
                         <div className="mt-1 text-[11px] font-bold text-[#98a2b3]">
@@ -487,35 +533,43 @@ export default function OrdersPage() {
                       </div>
                     </div>
 
-                    <div
-                      className={`hidden w-fit min-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-bold lg:flex ${statusBadgeClass(
-                        order.status
-                      )}`}
-                    >
-                      {getDisplayStatus(order.status)}
+                    <div className="hidden min-w-0 text-[13px] font-extrabold text-[#475467] lg:block">
+                      {formatOrderCreatedDate(order)}
                     </div>
 
-                    <div className="hidden min-w-0 flex-col lg:flex">
-                      <span className="text-[17px] font-black text-[#1f2937]">
-                        {order.patient_name || '-'} 환자님
-                      </span>
-                      <span className="mt-1 text-[11px] font-bold text-[#98a2b3]">
+                    <div className="hidden min-w-0 text-[13px] font-black text-blue-600 lg:block">
+                      {formatDate(order.delivery_date)}
+                    </div>
+
+                    <div className="hidden min-w-0 lg:block">
+                      <div className="truncate text-[15px] font-black text-[#1f2937]" title={patientName}>
+                        {patientName}
+                      </div>
+                      <div className="mt-0.5 text-[11px] font-bold text-[#98a2b3]">
                         {order.order_number || `ORDER-${order.id}`}
-                      </span>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 rounded-[16px] bg-[#f8fafc] p-3 text-[13px] text-[#475467] sm:grid-cols-3 lg:contents">
+                    <div className="hidden min-w-0 truncate text-[13px] font-extrabold text-[#1f2937] lg:block" title={order.product_type || '-'}>
+                      {order.product_type || '-'}
+                    </div>
+
+                    <div className="hidden min-w-0 truncate text-[13px] font-extrabold text-[#3b82f6] lg:block" title={order.clinic_name || '-'}>
+                      {order.clinic_name || '-'}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 rounded-[14px] bg-white/55 p-3 text-[12px] text-[#475467] sm:grid-cols-4 lg:hidden">
                       <div className="flex min-w-0 flex-col">
-                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
-                          제품 유형
+                        <span className="mb-1 text-[10px] font-bold text-[#98a2b3]">
+                          접수일
                         </span>
-                        <span className="truncate font-extrabold text-[#1f2937]" title={order.product_type || '-'}>
-                          {order.product_type || '-'}
+                        <span className="truncate font-extrabold">
+                          {formatOrderCreatedDate(order)}
                         </span>
                       </div>
 
                       <div className="flex min-w-0 flex-col">
-                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                        <span className="mb-1 text-[10px] font-bold text-[#98a2b3]">
                           희망 납기일
                         </span>
                         <span className="truncate font-extrabold text-blue-600">
@@ -523,36 +577,36 @@ export default function OrdersPage() {
                         </span>
                       </div>
 
-                      {userRole === 'admin' && (
-                        <div className="col-span-2 flex min-w-0 flex-col sm:col-span-1">
-                          <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
-                            치과명
-                          </span>
-                          <span
-                            className="truncate font-extrabold text-[#3b82f6]"
-                            title={order.clinic_name || '-'}
-                          >
-                            {order.clinic_name || '-'}
-                          </span>
-                        </div>
-                      )}
+                      <div className="flex min-w-0 flex-col">
+                        <span className="mb-1 text-[10px] font-bold text-[#98a2b3]">
+                          제품유형
+                        </span>
+                        <span className="truncate font-extrabold" title={order.product_type || '-'}>
+                          {order.product_type || '-'}
+                        </span>
+                      </div>
+
+                      <div className="flex min-w-0 flex-col">
+                        <span className="mb-1 text-[10px] font-bold text-[#98a2b3]">
+                          치과명
+                        </span>
+                        <span className="truncate font-extrabold text-[#3b82f6]" title={order.clinic_name || '-'}>
+                          {order.clinic_name || '-'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-[#eef2f6] pt-3 lg:w-auto lg:flex-col lg:items-end lg:border-t-0 lg:pt-0">
-                      <span className="whitespace-nowrap text-[11px] font-bold text-[#98a2b3]">
-                        접수일: {formatOrderCreatedDate(order)}
+                    <div className="flex items-center justify-between gap-3 border-t border-white/70 pt-2 lg:justify-center lg:border-t-0 lg:pt-0">
+                      <span className="text-[11px] font-bold text-[#98a2b3] lg:hidden">
+                        현재 상태
                       </span>
-
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          router.push(`/orders/${order.id}`)
-                        }}
-                        className="rounded-[10px] border border-[#d6dde8] bg-white px-5 py-2 text-[13px] font-bold text-[#475467] transition hover:bg-[#f8fafc] hover:text-[#1f2937]"
+                      <span
+                        className={`inline-flex min-w-[112px] justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-black ${statusBadgeClass(
+                          order.status
+                        )}`}
                       >
-                        상세 보기
-                      </button>
+                        {displayStatus}
+                      </span>
                     </div>
                   </div>
                 )
