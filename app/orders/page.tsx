@@ -391,14 +391,14 @@ export default function OrdersPage() {
           </button>
         </div>
 
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex w-full flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 xl:w-auto xl:overflow-visible xl:pb-0">
             {STATUS_TABS.map((status) => (
               <button
                 key={status}
                 type="button"
                 onClick={() => setSelectedStatus(status)}
-                className={`rounded-[12px] px-4 py-3 text-[13px] font-bold transition sm:px-5 sm:py-2.5 sm:text-[14px] ${
+                className={`h-10 shrink-0 rounded-[10px] px-4 text-[13px] font-bold transition ${
                   selectedStatus === status
                     ? 'bg-[#1f2937] text-white shadow-md'
                     : 'border border-[#e1e7ef] bg-white text-[#667085] hover:bg-[#f8fafc]'
@@ -409,9 +409,9 @@ export default function OrdersPage() {
             ))}
           </div>
 
-          <div className="grid w-full gap-3 sm:grid-cols-[minmax(220px,300px)_auto] lg:w-auto lg:items-start">
-            <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
-              <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
+          <div className="grid w-full gap-2 sm:grid-cols-[220px_auto] xl:w-auto xl:items-center">
+            <div className="rounded-[14px] border border-[#e1e7ef] bg-white p-2 shadow-sm">
+              <div className="mb-1.5 whitespace-nowrap text-[12px] font-bold text-[#667085]">
                 환자명 검색
               </div>
 
@@ -420,12 +420,12 @@ export default function OrdersPage() {
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
                 placeholder="예: 홍길동"
-                className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] font-semibold text-[#475467] outline-none focus:border-[#9db7ff] focus:bg-white"
+                className="h-9 w-full rounded-[9px] bg-[#f8fafc] px-3 text-[13px] font-semibold text-[#475467] outline-none focus:border-[#9db7ff] focus:bg-white"
               />
             </div>
 
-            <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
-              <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
+            <div className="rounded-[14px] border border-[#e1e7ef] bg-white p-2 shadow-sm">
+              <div className="mb-1.5 whitespace-nowrap text-[12px] font-bold text-[#667085]">
                 접수일 조회
               </div>
 
@@ -434,7 +434,7 @@ export default function OrdersPage() {
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+                  className="h-9 w-full rounded-[9px] bg-[#f8fafc] px-2.5 text-[13px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-[138px]"
                 />
 
                 <span className="hidden text-[#98a2b3] sm:inline">~</span>
@@ -443,13 +443,13 @@ export default function OrdersPage() {
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+                  className="h-9 w-full rounded-[9px] bg-[#f8fafc] px-2.5 text-[13px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-[138px]"
                 />
 
                 <button
                   type="button"
                   onClick={resetDateFilter}
-                  className="h-10 w-full rounded-[10px] bg-[#f1f5f9] px-4 text-[13px] font-bold text-[#64748b] transition hover:bg-[#e2e8f0] sm:w-auto"
+                  className="h-9 w-full rounded-[9px] bg-[#f1f5f9] px-3 text-[12px] font-bold text-[#64748b] transition hover:bg-[#e2e8f0] sm:w-auto"
                 >
                   초기화
                 </button>
