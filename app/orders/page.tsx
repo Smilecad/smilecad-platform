@@ -466,12 +466,10 @@ export default function OrdersPage() {
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="w-full min-w-[1320px] max-w-[1580px]">
-              <div className="grid grid-cols-[56px_150px_130px_150px_130px_minmax(280px,0.95fr)_minmax(220px,0.75fr)_140px] items-center gap-x-5 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
+            <div className="w-full min-w-[1180px]">
+              <div className="grid grid-cols-[72px_200px_200px_minmax(320px,1fr)_minmax(220px,0.72fr)_170px] items-center border-b border-slate-300 px-6 pb-3 text-[12px] font-black text-slate-600">
                 <div className="text-center">#</div>
-                <div aria-hidden="true" />
                 <div>접수일</div>
-                <div aria-hidden="true" />
                 <div>납기일</div>
                 <div>치과</div>
                 <div>환자</div>
@@ -490,7 +488,7 @@ export default function OrdersPage() {
                       key={order.id}
                       type="button"
                       onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`grid w-full grid-cols-[56px_150px_130px_150px_130px_minmax(280px,0.95fr)_minmax(220px,0.75fr)_140px] items-center gap-x-5 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                      className={`grid w-full grid-cols-[72px_200px_200px_minmax(320px,1fr)_minmax(220px,0.72fr)_170px] items-center border-l-[3px] px-6 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
                         order.status
                       )}`}
                     >
@@ -498,13 +496,9 @@ export default function OrdersPage() {
                         {orderIndex}
                       </div>
 
-                      <div aria-hidden="true" />
-
                       <div className="text-[13px] font-bold leading-tight text-slate-800">
                         {formatOrderCreatedDate(order)}
                       </div>
-
-                      <div aria-hidden="true" />
 
                       <div className="text-[14px] font-black leading-tight text-slate-950">
                         {formatDate(order.delivery_date)}
@@ -544,7 +538,7 @@ export default function OrdersPage() {
         </section>
 
         {filteredOrders.length > 0 && (
-          <div className="mt-5 flex max-w-[1580px] flex-col gap-3 text-[13px] font-bold text-slate-700 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-5 flex w-full flex-col gap-3 text-[13px] font-bold text-slate-700 sm:flex-row sm:items-center sm:justify-between">
             <div>
               {pageStartIndex + 1}-{pageEndIndex} / {filteredOrders.length}건
             </div>
