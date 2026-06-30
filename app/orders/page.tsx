@@ -466,8 +466,8 @@ export default function OrdersPage() {
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="w-full min-w-[1180px]">
-              <div className="grid grid-cols-[72px_200px_200px_minmax(320px,1fr)_minmax(220px,0.72fr)_170px] items-center border-b border-slate-300 px-6 pb-3 text-[12px] font-black text-slate-600">
+            <div className="w-full min-w-[1110px]">
+              <div className="grid grid-cols-[70px_150px_170px_minmax(360px,1fr)_210px_150px] items-center border-b border-slate-300 px-6 pb-3 text-[12px] font-black text-slate-600">
                 <div className="text-center">#</div>
                 <div>접수일</div>
                 <div>납기일</div>
@@ -488,7 +488,7 @@ export default function OrdersPage() {
                       key={order.id}
                       type="button"
                       onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`grid w-full grid-cols-[72px_200px_200px_minmax(320px,1fr)_minmax(220px,0.72fr)_170px] items-center border-l-[3px] px-6 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                      className={`grid w-full grid-cols-[70px_150px_170px_minmax(360px,1fr)_210px_150px] items-center border-l-[3px] px-6 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
                         order.status
                       )}`}
                     >
