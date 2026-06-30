@@ -466,11 +466,12 @@ export default function OrdersPage() {
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="w-full min-w-[1180px] max-w-[1580px]">
-              <div className="grid grid-cols-[56px_120px_130px_130px_minmax(260px,1fr)_minmax(220px,1fr)_150px] items-center gap-x-8 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
+            <div className="w-full min-w-[1320px] max-w-[1580px]">
+              <div className="grid grid-cols-[56px_150px_130px_150px_130px_minmax(280px,0.95fr)_minmax(220px,0.75fr)_140px] items-center gap-x-5 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
                 <div className="text-center">#</div>
                 <div aria-hidden="true" />
                 <div>접수일</div>
+                <div aria-hidden="true" />
                 <div>납기일</div>
                 <div>치과</div>
                 <div>환자</div>
@@ -489,7 +490,7 @@ export default function OrdersPage() {
                       key={order.id}
                       type="button"
                       onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`grid w-full grid-cols-[56px_120px_130px_130px_minmax(260px,1fr)_minmax(220px,1fr)_150px] items-center gap-x-8 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                      className={`grid w-full grid-cols-[56px_150px_130px_150px_130px_minmax(280px,0.95fr)_minmax(220px,0.75fr)_140px] items-center gap-x-5 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
                         order.status
                       )}`}
                     >
@@ -502,6 +503,8 @@ export default function OrdersPage() {
                       <div className="text-[13px] font-bold leading-tight text-slate-800">
                         {formatOrderCreatedDate(order)}
                       </div>
+
+                      <div aria-hidden="true" />
 
                       <div className="text-[14px] font-black leading-tight text-slate-950">
                         {formatDate(order.delivery_date)}
