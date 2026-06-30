@@ -466,9 +466,10 @@ export default function OrdersPage() {
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="w-full min-w-[980px] max-w-[1580px]">
-              <div className="grid grid-cols-[56px_110px_120px_minmax(320px,1fr)_minmax(220px,0.7fr)_150px] items-center gap-x-6 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
+            <div className="w-full min-w-[1180px] max-w-[1580px]">
+              <div className="grid grid-cols-[56px_120px_130px_130px_minmax(260px,1fr)_minmax(220px,1fr)_150px] items-center gap-x-8 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
                 <div className="text-center">#</div>
+                <div aria-hidden="true" />
                 <div>접수일</div>
                 <div>납기일</div>
                 <div>치과</div>
@@ -488,13 +489,15 @@ export default function OrdersPage() {
                       key={order.id}
                       type="button"
                       onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`grid w-full grid-cols-[56px_110px_120px_minmax(320px,1fr)_minmax(220px,0.7fr)_150px] items-center gap-x-6 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                      className={`grid w-full grid-cols-[56px_120px_130px_130px_minmax(260px,1fr)_minmax(220px,1fr)_150px] items-center gap-x-8 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
                         order.status
                       )}`}
                     >
                       <div className="text-center text-[14px] font-black text-slate-950">
                         {orderIndex}
                       </div>
+
+                      <div aria-hidden="true" />
 
                       <div className="text-[13px] font-bold leading-tight text-slate-800">
                         {formatOrderCreatedDate(order)}
