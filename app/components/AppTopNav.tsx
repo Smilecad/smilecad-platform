@@ -46,7 +46,7 @@ function getPushButtonLabel(status: PushButtonStatus) {
   if (status === 'missing-key') return '알림 설정 필요'
   if (status === 'denied') return '알림 차단됨'
   if (status === 'subscribing') return '알림 등록중'
-  if (status === 'enabled') return '알림 켜짐'
+  if (status === 'enabled') return '알림 허용'
   if (status === 'error') return '알림 재시도'
   return '알림 허용'
 }
@@ -59,10 +59,21 @@ function getPushButtonTitle(status: PushButtonStatus) {
   return '스마일캐드 주문/확인서 알림을 이 브라우저에서 받습니다.'
 }
 
+function LogoIcon() {
+  return (
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] bg-blue-600 text-white shadow-sm">
+      <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" aria-hidden="true">
+        <path d="M12 3 20 7.2V16.8L12 21 4 16.8V7.2L12 3Z" fill="currentColor" opacity="0.95" />
+        <path d="M7.8 8.5 12 10.7 16.2 8.5M7.8 12 12 14.2 16.2 12" stroke="white" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  )
+}
+
 function PushIcon({ enabled }: { enabled?: boolean }) {
   return (
-    <span className="relative inline-flex h-4 w-4 items-center justify-center">
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+    <span className="relative inline-flex h-3.5 w-3.5 items-center justify-center">
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
         <path
           d="M12 22a2.6 2.6 0 0 0 2.45-1.75h-4.9A2.6 2.6 0 0 0 12 22Z"
           fill="currentColor"
@@ -72,9 +83,7 @@ function PushIcon({ enabled }: { enabled?: boolean }) {
           fill="currentColor"
         />
       </svg>
-      {enabled && (
-        <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
-      )}
+      {enabled && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-emerald-500" />}
     </span>
   )
 }
@@ -181,10 +190,8 @@ export default function AppTopNav({ current }: { current?: string }) {
   }
 
   const navButtonClass = (item: NavItem) =>
-    `h-9 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
-      isActive(item)
-        ? 'bg-[#1e293b] text-white shadow-md'
-        : 'border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+    `h-8 whitespace-nowrap px-2.5 text-[12px] font-black transition ${
+      isActive(item) ? 'text-slate-950' : 'text-slate-700 hover:text-blue-600'
     }`
 
   const arrayBufferToBase64Url = (buffer: ArrayBuffer | null) => {
@@ -197,11 +204,7 @@ export default function AppTopNav({ current }: { current?: string }) {
       binary += String.fromCharCode(bytes[i])
     }
 
-    return window
-      .btoa(binary)
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '')
+    return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
   }
 
   const saveSubscription = async (subscription: PushSubscription) => {
@@ -222,8 +225,7 @@ export default function AppTopNav({ current }: { current?: string }) {
     }
 
     const endpoint = subscription.endpoint || jsonSubscription.endpoint || ''
-    const p256dh =
-      jsonSubscription.keys?.p256dh || arrayBufferToBase64Url(subscription.getKey('p256dh'))
+    const p256dh = jsonSubscription.keys?.p256dh || arrayBufferToBase64Url(subscription.getKey('p256dh'))
     const auth = jsonSubscription.keys?.auth || arrayBufferToBase64Url(subscription.getKey('auth'))
 
     if (!endpoint || !p256dh || !auth) {
@@ -308,10 +310,7 @@ export default function AppTopNav({ current }: { current?: string }) {
 
       setPushStatus('subscribing')
 
-      const permission =
-        Notification.permission === 'granted'
-          ? 'granted'
-          : await Notification.requestPermission()
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
 
       if (permission !== 'granted') {
         setPushStatus(permission === 'denied' ? 'denied' : 'default')
@@ -341,41 +340,21 @@ export default function AppTopNav({ current }: { current?: string }) {
   }
 
   return (
-    <header className="mb-6 rounded-[22px] border border-[#e5eaf2] bg-white px-4 py-3.5 shadow-[0_10px_26px_rgba(15,23,42,0.05)] sm:px-5 lg:mb-8">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <button
-          type="button"
-          onClick={() => moveTo('/orders')}
-          className="flex shrink-0 items-center gap-3 text-left"
-        >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-[0_10px_22px_rgba(37,99,235,0.22)]">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
-              <path
-                d="M12 21C12 21 18 15.8 18 9.8C18 6.5 15.3 4 12 4C8.7 4 6 6.5 6 9.8C6 15.8 12 21 12 21Z"
-                fill="currentColor"
-              />
-              <circle cx="12" cy="9.8" r="2.2" fill="white" opacity="0.9" />
-            </svg>
-          </div>
-
+    <header className="relative z-50">
+      <div className="grid grid-cols-1 items-center gap-4 lg:grid-cols-[auto_1fr_auto]">
+        <button type="button" onClick={() => moveTo('/orders')} className="flex items-center gap-2.5 text-left">
+          <LogoIcon />
           <div className="min-w-0">
-            <div className="whitespace-nowrap text-[22px] font-black leading-none tracking-[-0.04em] text-[#111827] sm:text-[24px]">
+            <div className="whitespace-nowrap text-[14px] font-black text-slate-950 sm:text-[15px]">
               SmileCAD
-              <span className="ml-1 text-[13px] font-black text-[#94a3b8] sm:text-[14px]">
-                Platform
-              </span>
+              <span className="ml-1 text-[11px] font-black text-slate-500">Platform</span>
             </div>
           </div>
         </button>
 
-        <nav className="flex flex-wrap items-center gap-1.5 xl:justify-end">
+        <nav className="flex flex-wrap items-center justify-start gap-3 lg:justify-center">
           {primaryNavItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => moveTo(item.path)}
-              className={navButtonClass(item)}
-            >
+            <button key={item.id} type="button" onClick={() => moveTo(item.path)} className={navButtonClass(item)}>
               {item.name}
             </button>
           ))}
@@ -385,27 +364,23 @@ export default function AppTopNav({ current }: { current?: string }) {
               <button
                 type="button"
                 onClick={() => setMoreOpen((open) => !open)}
-                className={`inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
-                  isMoreActive || moreOpen
-                    ? 'bg-[#1e293b] text-white shadow-md'
-                    : 'border border-[#e2e8f0] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+                className={`inline-flex h-8 items-center gap-1 whitespace-nowrap px-2.5 text-[12px] font-black transition ${
+                  isMoreActive || moreOpen ? 'text-slate-950' : 'text-slate-700 hover:text-blue-600'
                 }`}
               >
                 더보기
-                <span className={`text-[10px] transition ${moreOpen ? 'rotate-180' : ''}`}>▼</span>
+                <span className={`text-[9px] transition ${moreOpen ? 'rotate-180' : ''}`}>▼</span>
               </button>
 
               {moreOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-[180px] overflow-hidden rounded-[16px] border border-[#e2e8f0] bg-white p-1.5 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
+                <div className="absolute left-0 z-50 mt-2 w-[170px] overflow-hidden rounded-[14px] border border-slate-200 bg-white p-1.5 shadow-[0_14px_36px_rgba(15,23,42,0.14)] lg:left-1/2 lg:-translate-x-1/2">
                   {moreNavItems.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => moveTo(item.path)}
-                      className={`flex w-full items-center rounded-[11px] px-3 py-2.5 text-left text-[13px] font-black transition ${
-                        isActive(item)
-                          ? 'bg-[#1e293b] text-white'
-                          : 'text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1e293b]'
+                      className={`flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[12px] font-black transition ${
+                        isActive(item) ? 'bg-slate-950 text-white' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950'
                       }`}
                     >
                       {item.name}
@@ -415,18 +390,20 @@ export default function AppTopNav({ current }: { current?: string }) {
               )}
             </div>
           )}
+        </nav>
 
+        <div className="flex items-center gap-4 lg:justify-end">
           <button
             type="button"
             onClick={handleEnablePush}
             disabled={pushStatus === 'checking' || pushStatus === 'subscribing' || pushStatus === 'unsupported'}
             title={getPushButtonTitle(pushStatus)}
-            className={`inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-[12px] px-3.5 text-[13px] font-black transition-all ${
+            className={`inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12px] font-black transition ${
               pushStatus === 'enabled'
-                ? 'border border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                ? 'text-slate-950 hover:text-emerald-700'
                 : pushStatus === 'denied' || pushStatus === 'error' || pushStatus === 'missing-key'
-                  ? 'border border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                  : 'border border-[#dbeafe] bg-[#eff6ff] text-[#2563eb] hover:bg-[#dbeafe]'
+                  ? 'text-amber-700 hover:text-amber-800'
+                  : 'text-slate-700 hover:text-blue-600'
             } ${
               pushStatus === 'checking' || pushStatus === 'subscribing' || pushStatus === 'unsupported'
                 ? 'cursor-not-allowed opacity-70'
@@ -440,11 +417,11 @@ export default function AppTopNav({ current }: { current?: string }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="h-9 whitespace-nowrap rounded-[12px] border border-[#e2e8f0] bg-white px-3.5 text-[13px] font-black text-[#64748b] transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-500"
+            className="h-8 whitespace-nowrap px-2.5 text-[12px] font-black text-slate-700 transition hover:text-red-500"
           >
             로그아웃
           </button>
-        </nav>
+        </div>
       </div>
     </header>
   )
