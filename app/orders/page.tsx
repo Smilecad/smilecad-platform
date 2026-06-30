@@ -44,14 +44,14 @@ const STATUS_TABS: OrderStatus[] = [
   '제작 진행',
 ]
 
+const ITEMS_PER_PAGE = 10
+
 const LIST_ORDERS_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_ORDERS_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-orders'
 
 const DEFAULT_LIST_ERROR =
   '주문 목록을 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요. 문제가 반복되면 스마일캐드에 문의해주세요.'
-
-const PAGE_SIZE = 10
 
 function isTechnicalErrorMessage(message: string) {
   const value = message.toLowerCase()
@@ -129,37 +129,45 @@ function getPlainPatientName(name?: string | null) {
     .trim() || '-'
 }
 
+function getOrderNumber(order: OrderItem) {
+  const value = String(order.order_number || '').trim()
+
+  if (value) return value
+
+  return `ORD-${order.id}`
+}
+
 function statusBadgeClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'bg-blue-50 text-blue-700 ring-blue-100'
+    return 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
-    return 'bg-red-50 text-red-700 ring-red-100'
+    return 'bg-red-50 text-red-700 ring-1 ring-red-100'
   }
 
   if (value.includes('확인서')) {
-    return 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+    return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
   }
 
   if (value.includes('디자인') || value.includes('작업')) {
-    return 'bg-amber-50 text-amber-700 ring-amber-100'
+    return 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
   }
 
-  return 'bg-blue-50 text-blue-700 ring-blue-100'
+  return 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
 }
 
 function rowAccentClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
-  if (value.includes('제작 진행') || value.includes('완료')) return 'border-l-blue-400'
-  if (value.includes('수정') || value.includes('재접수')) return 'border-l-red-400'
-  if (value.includes('확인서')) return 'border-l-emerald-400'
-  if (value.includes('디자인') || value.includes('작업')) return 'border-l-amber-400'
+  if (value.includes('제작 진행') || value.includes('완료')) return 'border-l-blue-500'
+  if (value.includes('수정') || value.includes('재접수')) return 'border-l-red-500'
+  if (value.includes('확인서')) return 'border-l-emerald-500'
+  if (value.includes('디자인') || value.includes('작업')) return 'border-l-amber-500'
 
-  return 'border-l-slate-200'
+  return 'border-l-blue-500'
 }
 
 function extractDateKey(value?: string | null) {
@@ -204,11 +212,11 @@ function formatDate(value?: string | null) {
 }
 
 function formatOrderCreatedDate(order: OrderItem) {
-  return formatDate(order.created_date_kst || order.created_at_kst || order.created_at)
-}
-
-function normalizeOrderNumber(order: OrderItem) {
-  return String(order.order_number || `ORD-${order.id}`).trim()
+  return formatDate(
+    order.created_date_kst ||
+      order.created_at_kst ||
+      order.created_at
+  )
 }
 
 export default function OrdersPage() {
@@ -305,10 +313,7 @@ export default function OrdersPage() {
     return orders.filter((order) => {
       const matchStatus = selectedStatus === '전체' || getDisplayStatus(order.status) === selectedStatus
       const matchPatient =
-        !patientKeyword ||
-        String(order.patient_name || '').toLowerCase().includes(patientKeyword) ||
-        String(order.clinic_name || '').toLowerCase().includes(patientKeyword) ||
-        String(order.order_number || '').toLowerCase().includes(patientKeyword)
+        !patientKeyword || String(order.patient_name || '').toLowerCase().includes(patientKeyword)
 
       const orderDateKey = getOrderCreatedDateKey(order)
 
@@ -330,15 +335,15 @@ export default function OrdersPage() {
     })
   }, [orders, selectedStatus, startDate, endDate, patientSearch])
 
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
+  const safePage = Math.min(page, totalPages)
+  const pageStartIndex = (safePage - 1) * ITEMS_PER_PAGE
+  const pageEndIndex = Math.min(pageStartIndex + ITEMS_PER_PAGE, filteredOrders.length)
+  const pagedOrders = filteredOrders.slice(pageStartIndex, pageEndIndex)
+
   useEffect(() => {
     setPage(1)
   }, [selectedStatus, startDate, endDate, patientSearch])
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
-  const pageStart = (safePage - 1) * PAGE_SIZE
-  const pageEnd = Math.min(pageStart + PAGE_SIZE, filteredOrders.length)
-  const pageOrders = filteredOrders.slice(pageStart, pageEnd)
 
   const resetDateFilter = () => {
     setStartDate('')
@@ -349,7 +354,7 @@ export default function OrdersPage() {
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="rounded-2xl border border-slate-200 bg-white px-7 py-5 text-[15px] font-bold text-slate-500 shadow-sm">
+        <div className="text-[14px] font-bold text-slate-500">
           데이터를 불러오는 중입니다...
         </div>
       </main>
@@ -357,109 +362,112 @@ export default function OrdersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white px-5 py-6 sm:px-8 sm:py-8">
-      <div className="mx-auto w-full max-w-[1920px]">
+    <main className="min-h-screen bg-white px-5 py-7 text-slate-950 sm:px-7 lg:px-8">
+      <div className="mx-auto w-full max-w-[1760px]">
         <AppTopNav current="orders" />
 
-        <section className="mt-8">
-          <div className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-[26px] font-black tracking-[-0.04em] text-slate-950 sm:text-[30px]">
-                  {userRole === 'admin' ? '전체 주문 관리' : '주문 목록'}
-                </h1>
-                <span className="text-[13px] font-black text-slate-500">총 {filteredOrders.length}건</span>
-              </div>
+        <div className="mt-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-end gap-3">
+              <h1 className="text-[28px] font-black tracking-[-0.04em] text-slate-950 sm:text-[31px]">
+                {userRole === 'admin' ? '전체 주문 관리' : '주문 목록'}
+              </h1>
 
-              <p className="mt-2 text-[13px] font-medium text-slate-500">
-                {userRole === 'admin'
-                  ? '모든 치과의 주문 내역을 조회합니다.'
-                  : `${currentUser?.email || currentUser?.loginId || ''}님의 주문 내역입니다.`}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-[12px] font-black text-slate-700">환자명 검색</label>
-                <input
-                  type="text"
-                  value={patientSearch}
-                  onChange={(event) => setPatientSearch(event.target.value)}
-                  placeholder="예: 홍길동"
-                  className="h-9 w-[180px] border-0 border-b border-slate-300 bg-transparent px-2 text-[13px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-900"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-[12px] font-black text-slate-700">접수일 조회</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="h-9 w-[138px] border-0 border-b border-slate-300 bg-transparent px-2 text-[13px] font-semibold text-slate-700 outline-none focus:border-slate-900"
-                />
-                <span className="text-slate-400">~</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="h-9 w-[138px] border-0 border-b border-slate-300 bg-transparent px-2 text-[13px] font-semibold text-slate-700 outline-none focus:border-slate-900"
-                />
-                <button
-                  type="button"
-                  onClick={resetDateFilter}
-                  className="h-9 px-3 text-[13px] font-black text-slate-500 transition hover:text-slate-950"
-                >
-                  초기화
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.push('/orders/new')}
-                  className="h-9 px-3 text-[13px] font-black text-slate-950 transition hover:text-blue-600"
-                >
-                  새 주문
-                </button>
+              <div className="pb-1 text-[13px] font-black text-slate-500">
+                총 <span className="text-blue-600">{filteredOrders.length}</span>건
               </div>
             </div>
+
+            <p className="mt-2 text-[13px] font-semibold text-slate-500">
+              {userRole === 'admin'
+                ? '모든 치과의 주문 내역을 조회합니다.'
+                : `${currentUser?.email || currentUser?.loginId || ''}님의 주문 내역입니다.`}
+            </p>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center gap-2">
-            {STATUS_TABS.map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setSelectedStatus(status)}
-                className={`h-9 rounded-full px-3 text-[12px] font-black transition ${
-                  selectedStatus === status
-                    ? 'bg-slate-950 text-white'
-                    : 'bg-white text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+            <label className="flex min-w-[250px] items-center gap-2 border-b border-slate-300 pb-2 text-[13px] font-black text-slate-800">
+              <span className="shrink-0">환자명 검색</span>
+              <input
+                type="text"
+                value={patientSearch}
+                onChange={(e) => setPatientSearch(e.target.value)}
+                placeholder="예: 홍길동"
+                className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-slate-700 outline-none placeholder:text-slate-300"
+              />
+            </label>
 
-          {error && (
-            <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-semibold text-red-600">
-              <div>{error}</div>
+            <div className="flex flex-wrap items-center gap-2 text-[13px] font-black text-slate-800">
+              <span>접수일 조회</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-8 w-[132px] border-b border-slate-300 bg-transparent px-1 text-[13px] font-semibold outline-none"
+              />
+              <span className="text-slate-400">~</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-8 w-[132px] border-b border-slate-300 bg-transparent px-1 text-[13px] font-semibold outline-none"
+              />
               <button
                 type="button"
-                onClick={fetchOrders}
-                className="mt-3 rounded-xl bg-red-600 px-4 py-2 text-[13px] font-bold text-white transition hover:bg-red-700"
+                onClick={resetDateFilter}
+                className="h-8 rounded-full px-3 text-[13px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
               >
-                다시 시도
+                초기화
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/orders/new')}
+                className="h-8 rounded-full bg-blue-600 px-4 text-[13px] font-black text-white shadow-sm transition hover:bg-blue-700"
+              >
+                새 주문
               </button>
             </div>
-          )}
+          </div>
+        </div>
 
+        <div className="mt-7 flex flex-nowrap gap-2 overflow-x-auto pb-1">
+          {STATUS_TABS.map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setSelectedStatus(status)}
+              className={`h-9 shrink-0 rounded-full px-4 text-[13px] font-black transition ${
+                selectedStatus === status
+                  ? 'bg-slate-950 text-white shadow-sm'
+                  : 'bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="mt-6 rounded-[14px] border border-red-100 bg-red-50 p-4 text-[13px] font-bold text-red-600">
+            <div>{error}</div>
+            <button
+              type="button"
+              onClick={fetchOrders}
+              className="mt-3 rounded-full bg-red-600 px-4 py-2 text-[12px] font-black text-white transition hover:bg-red-700"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+
+        <section className="mt-6 overflow-x-auto">
           {filteredOrders.length === 0 ? (
-            <div className="flex min-h-[240px] items-center justify-center border-y border-slate-200 text-[14px] font-bold text-slate-400">
+            <div className="flex min-h-[260px] items-center justify-center border-y border-slate-200 text-center text-[14px] font-bold text-slate-400">
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div>
-              <div className="hidden grid-cols-[56px_88px_94px_minmax(220px,1fr)_minmax(160px,0.9fr)_132px] border-b border-slate-200 px-3 pb-3 text-[12px] font-black text-slate-700 lg:grid xl:grid-cols-[56px_88px_94px_minmax(260px,1.4fr)_minmax(180px,1fr)_132px]">
+            <div className="min-w-[920px] max-w-[1080px]">
+              <div className="grid grid-cols-[52px_86px_94px_290px_190px_130px] items-center gap-x-5 border-b border-slate-300 px-4 pb-3 text-[12px] font-black text-slate-600">
                 <div className="text-center">#</div>
                 <div>접수일</div>
                 <div>납기일</div>
@@ -468,32 +476,31 @@ export default function OrdersPage() {
                 <div className="text-center">상태</div>
               </div>
 
-              <div>
-                {pageOrders.map((order, index) => {
-                  const orderIndex = filteredOrders.length - (pageStart + index)
+              <div className="divide-y divide-slate-100">
+                {pagedOrders.map((order, index) => {
+                  const orderIndex = filteredOrders.length - (pageStartIndex + index)
                   const displayStatus = getDisplayStatus(order.status)
                   const patientName = getPlainPatientName(order.patient_name)
-                  const orderNumber = normalizeOrderNumber(order)
+                  const orderNumber = getOrderNumber(order)
 
                   return (
                     <button
                       key={order.id}
                       type="button"
                       onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`group grid w-full grid-cols-1 gap-3 border-b border-l-4 border-slate-100 px-3 py-4 text-left transition hover:bg-slate-50 lg:grid-cols-[56px_88px_94px_minmax(220px,1fr)_minmax(160px,0.9fr)_132px] lg:items-center lg:gap-0 xl:grid-cols-[56px_88px_94px_minmax(260px,1.4fr)_minmax(180px,1fr)_132px] ${rowAccentClass(order.status)}`}
+                      className={`grid w-full grid-cols-[52px_86px_94px_290px_190px_130px] items-center gap-x-5 border-l-[3px] px-4 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                        order.status
+                      )}`}
                     >
-                      <div className="flex items-center justify-between gap-3 lg:block lg:text-center">
-                        <span className="text-[13px] font-black text-slate-800 lg:text-[14px]">{orderIndex}</span>
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ring-1 lg:hidden ${statusBadgeClass(order.status)}`}>
-                          {displayStatus}
-                        </span>
+                      <div className="text-center text-[14px] font-black text-slate-950">
+                        {orderIndex}
                       </div>
 
-                      <div className="text-[13px] font-bold leading-snug text-slate-700">
+                      <div className="text-[13px] font-bold leading-tight text-slate-800">
                         {formatOrderCreatedDate(order)}
                       </div>
 
-                      <div className="text-[13px] font-black leading-snug text-slate-950">
+                      <div className="text-[14px] font-black leading-tight text-slate-950">
                         {formatDate(order.delivery_date)}
                       </div>
 
@@ -501,22 +508,24 @@ export default function OrdersPage() {
                         <div className="truncate text-[14px] font-black text-slate-950" title={order.clinic_name || '-'}>
                           {order.clinic_name || '-'}
                         </div>
-                        <div className="mt-1 text-[11px] font-bold text-slate-400 lg:hidden">
-                          {order.product_type || '-'}
-                        </div>
+                        {order.product_type ? (
+                          <div className="mt-1 truncate text-[11px] font-bold text-slate-400" title={order.product_type}>
+                            {order.product_type}
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="min-w-0">
                         <div className="truncate text-[14px] font-black text-slate-950" title={patientName}>
                           {patientName}
                         </div>
-                        <div className="mt-1 text-[11px] font-bold text-slate-600">
+                        <div className="mt-1 text-[11px] font-bold text-slate-500">
                           {orderNumber}
                         </div>
                       </div>
 
-                      <div className="hidden justify-center lg:flex">
-                        <span className={`inline-flex rounded-full px-3 py-1.5 text-[11px] font-black ring-1 ${statusBadgeClass(order.status)}`}>
+                      <div className="flex justify-center">
+                        <span className={`inline-flex h-7 items-center rounded-full px-3 text-[11px] font-black ${statusBadgeClass(order.status)}`}>
                           {displayStatus}
                         </span>
                       </div>
@@ -524,32 +533,38 @@ export default function OrdersPage() {
                   )
                 })}
               </div>
-
-              <div className="mt-5 flex flex-col gap-4 px-3 text-[13px] font-bold text-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  {filteredOrders.length === 0 ? '0건' : `${pageStart + 1}-${pageEnd} / ${filteredOrders.length}건`}
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {Array.from({ length: totalPages }, (_, pageIndex) => pageIndex + 1).map((pageNumber) => (
-                    <button
-                      key={pageNumber}
-                      type="button"
-                      onClick={() => setPage(pageNumber)}
-                      className={`h-8 min-w-8 rounded-full px-2 text-[13px] font-black transition ${
-                        safePage === pageNumber
-                          ? 'bg-slate-950 text-white'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      {pageNumber}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
         </section>
+
+        {filteredOrders.length > 0 && (
+          <div className="mt-5 flex max-w-[1080px] flex-col gap-3 text-[13px] font-bold text-slate-700 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              {pageStartIndex + 1}-{pageEndIndex} / {filteredOrders.length}건
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalPages }).map((_, index) => {
+                const pageNumber = index + 1
+
+                return (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    onClick={() => setPage(pageNumber)}
+                    className={`h-8 min-w-8 rounded-full px-2 text-[13px] font-black transition ${
+                      safePage === pageNumber
+                        ? 'bg-slate-950 text-white'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    }`}
+                  >
+                    {pageNumber}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   )
