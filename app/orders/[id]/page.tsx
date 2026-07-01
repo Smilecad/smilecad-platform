@@ -1804,29 +1804,23 @@ export default function OrderDetailPage() {
           </div>
         </section>
 
-        <section className="mb-7 rounded-[24px] border border-slate-200 bg-white px-6 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-7">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-100">
-                <IconClock />
-              </div>
-              <h2 className="text-[20px] font-black tracking-[-0.03em] text-slate-950">
-                주문 이력
-              </h2>
+        <section className="mb-7 rounded-[22px] border border-slate-200 bg-white px-6 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-7">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-100">
+              <IconClock />
             </div>
-
-            <span className={`hidden rounded-full border px-3 py-1 text-[12px] font-black sm:inline-flex ${statusStyle(order.status)}`}>
-              현재 상태: {getDisplayOrderStatus(order.status)}
-            </span>
+            <h2 className="text-[20px] font-black tracking-[-0.03em] text-slate-950">
+              주문 이력
+            </h2>
           </div>
 
           <div className="overflow-x-auto pb-1">
-            <div className="flex min-w-[920px] items-start rounded-[18px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex min-w-[980px] items-center rounded-[18px] border border-slate-200 bg-white px-5 py-3 shadow-sm">
               {progressSteps.map((step, index) => (
-                <div key={step.label} className="flex flex-1 items-start">
-                  <div className="flex min-w-[120px] flex-col items-center text-center">
+                <div key={step.label} className="flex flex-1 items-center">
+                  <div className="flex min-w-[150px] items-center gap-3">
                     <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-full border text-[13px] font-black transition-all ${
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[13px] font-black transition-all ${
                         step.isDone
                           ? 'border-blue-600 bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
                           : step.isCurrent
@@ -1849,24 +1843,30 @@ export default function OrderDetailPage() {
                       )}
                     </div>
 
-                    <p
-                      className={`mt-2 whitespace-nowrap text-[13px] font-black ${
-                        step.isDone || step.isCurrent ? 'text-slate-950' : 'text-slate-400'
-                      }`}
-                    >
-                      {step.label}
-                    </p>
-                    <p
-                      className={`mt-1 whitespace-nowrap text-[12px] font-bold ${
-                        step.isDone || step.isCurrent ? 'text-slate-600' : 'text-slate-400'
-                      }`}
-                    >
-                      {step.time && step.time !== '대기 중' ? step.time : '-'}
-                    </p>
+                    <div className="min-w-0 text-left">
+                      <p
+                        className={`whitespace-nowrap text-[13px] font-black leading-tight ${
+                          step.isDone || step.isCurrent ? 'text-slate-950' : 'text-slate-400'
+                        }`}
+                      >
+                        {step.label}
+                      </p>
+                      <p
+                        className={`mt-1 whitespace-nowrap text-[12px] font-bold leading-tight ${
+                          step.isDone || step.isCurrent ? 'text-slate-600' : 'text-slate-400'
+                        }`}
+                      >
+                        {step.time && step.time !== '대기 중' ? step.time : '-'}
+                      </p>
+                    </div>
                   </div>
 
                   {index < progressSteps.length - 1 && (
-                    <div className="mt-[18px] h-px flex-1 border-t border-dashed border-slate-300" />
+                    <div
+                      className={`mx-4 h-px flex-1 border-t ${
+                        step.isDone ? 'border-blue-500' : 'border-dashed border-slate-300'
+                      }`}
+                    />
                   )}
                 </div>
               ))}
