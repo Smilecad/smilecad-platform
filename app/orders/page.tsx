@@ -44,8 +44,6 @@ const STATUS_TABS: OrderStatus[] = [
   '제작 진행',
 ]
 
-const ITEMS_PER_PAGE = 10
-
 const LIST_ORDERS_API_URL =
   process.env.NEXT_PUBLIC_NCP_LIST_ORDERS_API_URL ||
   'https://e2s4lswlw8.apigw.ntruss.com/smilecad-main-api/v1/list-orders'
@@ -122,52 +120,22 @@ function getDisplayStatus(status?: string | null) {
   return value
 }
 
-function getPlainPatientName(name?: string | null) {
-  return String(name || '-')
-    .replace(/\s*환자님\s*$/g, '')
-    .replace(/\s*환자\s*$/g, '')
-    .trim() || '-'
-}
-
-function getOrderNumber(order: OrderItem) {
-  const value = String(order.order_number || '').trim()
-
-  if (value) return value
-
-  return `ORD-${order.id}`
-}
-
 function statusBadgeClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('확인서') || value.includes('디자인') || value.includes('작업')) {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
-    return 'bg-red-50 text-red-700 ring-1 ring-red-100'
+    return 'border-orange-200 bg-orange-50 text-orange-700'
   }
 
-  if (value.includes('확인서')) {
-    return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
-  }
-
-  if (value.includes('디자인') || value.includes('작업')) {
-    return 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
-  }
-
-  return 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
-}
-
-function rowAccentClass(status?: string | null) {
-  const value = getDisplayStatus(status)
-
-  if (value.includes('제작 진행') || value.includes('완료')) return 'border-l-blue-500'
-  if (value.includes('수정') || value.includes('재접수')) return 'border-l-red-500'
-  if (value.includes('확인서')) return 'border-l-emerald-500'
-  if (value.includes('디자인') || value.includes('작업')) return 'border-l-amber-500'
-
-  return 'border-l-blue-500'
+  return 'border-blue-200 bg-blue-50 text-blue-700'
 }
 
 function extractDateKey(value?: string | null) {
@@ -208,7 +176,7 @@ function formatDate(value?: string | null) {
 
   const [year, month, day] = dateKey.split('-')
 
-  return `${Number(year)}. ${Number(month)}. ${Number(day)}`
+  return `${Number(year)}. ${Number(month)}. ${Number(day)}.`
 }
 
 function formatOrderCreatedDate(order: OrderItem) {
@@ -231,7 +199,6 @@ export default function OrdersPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [patientSearch, setPatientSearch] = useState('')
-  const [page, setPage] = useState(1)
 
   const fetchOrders = useCallback(async () => {
     const token = window.localStorage.getItem('smilecad_token')
@@ -335,16 +302,6 @@ export default function OrdersPage() {
     })
   }, [orders, selectedStatus, startDate, endDate, patientSearch])
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE))
-  const safePage = Math.min(page, totalPages)
-  const pageStartIndex = (safePage - 1) * ITEMS_PER_PAGE
-  const pageEndIndex = Math.min(pageStartIndex + ITEMS_PER_PAGE, filteredOrders.length)
-  const pagedOrders = filteredOrders.slice(pageStartIndex, pageEndIndex)
-
-  useEffect(() => {
-    setPage(1)
-  }, [selectedStatus, startDate, endDate, patientSearch])
-
   const resetDateFilter = () => {
     setStartDate('')
     setEndDate('')
@@ -353,8 +310,8 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="text-[14px] font-bold text-slate-500">
+      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] px-4">
+        <div className="rounded-2xl border border-slate-200 bg-white px-7 py-5 text-[15px] font-bold text-slate-500 shadow-sm">
           데이터를 불러오는 중입니다...
         </div>
       </main>
@@ -362,209 +319,247 @@ export default function OrdersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white px-5 py-7 text-slate-950 sm:px-7 lg:px-8">
-      <div className="mx-auto w-full max-w-[1760px]">
+    <main className="min-h-screen bg-[#f3f5f9] px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto w-full max-w-[1480px]">
         <AppTopNav current="orders" />
 
-        <div className="mt-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-end gap-3">
-              <h1 className="text-[28px] font-black tracking-[-0.04em] text-slate-950 sm:text-[31px]">
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="text-[28px] font-extrabold leading-tight tracking-tight text-[#1f2937] sm:text-[30px]">
                 {userRole === 'admin' ? '전체 주문 관리' : '주문 목록'}
-              </h1>
+              </div>
 
-              <div className="pb-1 text-[13px] font-black text-slate-500">
-                총 <span className="text-blue-600">{filteredOrders.length}</span>건
+              <div className="flex w-fit items-center gap-2 rounded-full bg-blue-600 px-5 py-2 shadow-lg shadow-blue-100">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-blue-100">
+                  Total
+                </span>
+                <span className="text-[20px] font-black text-white">
+                  {filteredOrders.length}
+                </span>
+                <span className="text-[12px] font-bold text-blue-100">건</span>
               </div>
             </div>
 
-            <p className="mt-2 text-[13px] font-semibold text-slate-500">
+            <div className="mt-2 text-[13px] text-[#98a2b3] sm:text-[14px]">
               {userRole === 'admin'
                 ? '모든 치과의 주문 내역을 조회합니다.'
                 : `${currentUser?.email || currentUser?.loginId || ''}님의 주문 내역입니다.`}
-            </p>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-            <label className="flex min-w-[250px] items-center gap-2 border-b border-slate-300 pb-2 text-[13px] font-black text-slate-800">
-              <span className="shrink-0">환자명 검색</span>
+          <button
+            type="button"
+            onClick={() => router.push('/orders/new')}
+            className="w-full rounded-[14px] bg-[#3b82f6] px-6 py-3 text-[15px] font-bold text-white shadow-[0_10px_24px_rgba(59,130,246,0.24)] transition hover:bg-[#2563eb] sm:w-auto"
+          >
+            + 새 주문하기
+          </button>
+        </div>
+
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            {STATUS_TABS.map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setSelectedStatus(status)}
+                className={`rounded-[12px] px-4 py-3 text-[13px] font-bold transition sm:px-5 sm:py-2.5 sm:text-[14px] ${
+                  selectedStatus === status
+                    ? 'bg-[#1f2937] text-white shadow-md'
+                    : 'border border-[#e1e7ef] bg-white text-[#667085] hover:bg-[#f8fafc]'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid w-full gap-3 sm:grid-cols-[minmax(220px,300px)_auto] lg:w-auto lg:items-start">
+            <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
+              <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
+                환자명 검색
+              </div>
+
               <input
                 type="text"
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
                 placeholder="예: 홍길동"
-                className="min-w-0 flex-1 bg-transparent text-[13px] font-semibold text-slate-700 outline-none placeholder:text-slate-300"
+                className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] font-semibold text-[#475467] outline-none focus:border-[#9db7ff] focus:bg-white"
               />
-            </label>
+            </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-[13px] font-black text-slate-800">
-              <span>접수일 조회</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-8 w-[132px] border-b border-slate-300 bg-transparent px-1 text-[13px] font-semibold outline-none"
-              />
-              <span className="text-slate-400">~</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-8 w-[132px] border-b border-slate-300 bg-transparent px-1 text-[13px] font-semibold outline-none"
-              />
-              <button
-                type="button"
-                onClick={resetDateFilter}
-                className="h-8 rounded-full px-3 text-[13px] font-bold text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
-              >
-                초기화
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/orders/new')}
-                className="h-8 rounded-full bg-blue-600 px-4 text-[13px] font-black text-white shadow-sm transition hover:bg-blue-700"
-              >
-                새 주문
-              </button>
+            <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
+              <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
+                접수일 조회
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+                />
+
+                <span className="hidden text-[#98a2b3] sm:inline">~</span>
+
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] text-[#475467] outline-none focus:border-[#9db7ff] sm:w-auto"
+                />
+
+                <button
+                  type="button"
+                  onClick={resetDateFilter}
+                  className="h-10 w-full rounded-[10px] bg-[#f1f5f9] px-4 text-[13px] font-bold text-[#64748b] transition hover:bg-[#e2e8f0] sm:w-auto"
+                >
+                  초기화
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-7 flex flex-nowrap gap-2 overflow-x-auto pb-1">
-          {STATUS_TABS.map((status) => (
-            <button
-              key={status}
-              type="button"
-              onClick={() => setSelectedStatus(status)}
-              className={`h-9 shrink-0 rounded-full px-4 text-[13px] font-black transition ${
-                selectedStatus === status
-                  ? 'bg-slate-950 text-white shadow-sm'
-                  : 'bg-white text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
-
         {error && (
-          <div className="mt-6 rounded-[14px] border border-red-100 bg-red-50 p-4 text-[13px] font-bold text-red-600">
+          <div className="mb-6 rounded-[18px] border border-red-100 bg-red-50 p-5 text-sm font-semibold text-red-600">
             <div>{error}</div>
             <button
               type="button"
               onClick={fetchOrders}
-              className="mt-3 rounded-full bg-red-600 px-4 py-2 text-[12px] font-black text-white transition hover:bg-red-700"
+              className="mt-4 rounded-[12px] bg-red-600 px-5 py-2 text-[13px] font-bold text-white transition hover:bg-red-700"
             >
               다시 시도
             </button>
           </div>
         )}
 
-        <section className="mt-6 overflow-x-auto">
+        <div className="overflow-hidden rounded-[24px] border border-[#d9e0ea] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] sm:rounded-[28px] sm:p-8">
           {filteredOrders.length === 0 ? (
-            <div className="flex min-h-[260px] items-center justify-center border-y border-slate-200 text-center text-[14px] font-bold text-slate-400">
+            <div className="flex min-h-[210px] items-center justify-center px-4 py-16 text-center text-[15px] font-semibold text-[#98a2b3]">
               조건에 맞는 주문이 없습니다.
             </div>
           ) : (
-            <div className="w-full min-w-[1110px]">
-              <div className="grid grid-cols-[70px_150px_170px_minmax(360px,1fr)_210px_150px] items-center border-b border-slate-300 px-6 pb-3 text-[12px] font-black text-slate-600">
-                <div className="text-center">#</div>
-                <div>접수일</div>
-                <div>납기일</div>
-                <div>치과</div>
-                <div>환자</div>
-                <div className="text-center">상태</div>
-              </div>
+            <div className="flex flex-col gap-3">
+              {filteredOrders.map((order, index) => {
+                const orderIndex = filteredOrders.length - index
 
-              <div className="divide-y divide-slate-100">
-                {pagedOrders.map((order, index) => {
-                  const orderIndex = filteredOrders.length - (pageStartIndex + index)
-                  const displayStatus = getDisplayStatus(order.status)
-                  const patientName = getPlainPatientName(order.patient_name)
-                  const orderNumber = getOrderNumber(order)
+                return (
+                  <div
+                    key={order.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(`/orders/${order.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        router.push(`/orders/${order.id}`)
+                      }
+                    }}
+                    className="grid cursor-pointer grid-cols-1 gap-4 rounded-[18px] border border-[#e1e7ef] bg-white p-4 shadow-sm transition hover:border-[#3b82f6] hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)] focus:outline-none focus:ring-4 focus:ring-blue-100 lg:grid-cols-[70px_100px_minmax(210px,1.2fr)_150px_150px_minmax(240px,1.4fr)_130px] lg:items-center lg:gap-5"
+                  >
+                    <div className="flex items-start gap-3 lg:justify-center">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[15px] font-black text-blue-600">
+                        {String(orderIndex).padStart(2, '0')}
+                      </div>
 
-                  return (
-                    <button
-                      key={order.id}
-                      type="button"
-                      onClick={() => router.push(`/orders/${order.id}`)}
-                      className={`grid w-full grid-cols-[70px_150px_170px_minmax(360px,1fr)_210px_150px] items-center border-l-[3px] px-6 py-4 text-left transition hover:bg-slate-50 ${rowAccentClass(
+                      <div className="min-w-0 flex-1 lg:hidden">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex w-fit shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-bold ${statusBadgeClass(
+                              order.status
+                            )}`}
+                          >
+                            {getDisplayStatus(order.status)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 text-[17px] font-black leading-tight text-[#1f2937]">
+                          {order.patient_name || '-'} 환자님
+                        </div>
+
+                        <div className="mt-1 text-[11px] font-bold text-[#98a2b3]">
+                          {order.order_number || `ORDER-${order.id}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`hidden w-fit min-w-[86px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] font-bold lg:flex ${statusBadgeClass(
                         order.status
                       )}`}
                     >
-                      <div className="text-center text-[14px] font-black text-slate-950">
-                        {orderIndex}
-                      </div>
+                      {getDisplayStatus(order.status)}
+                    </div>
 
-                      <div className="text-[13px] font-bold leading-tight text-slate-800">
-                        {formatOrderCreatedDate(order)}
-                      </div>
+                    <div className="hidden min-w-0 flex-col lg:flex">
+                      <span className="text-[17px] font-black text-[#1f2937]">
+                        {order.patient_name || '-'} 환자님
+                      </span>
+                      <span className="mt-1 text-[11px] font-bold text-[#98a2b3]">
+                        {order.order_number || `ORDER-${order.id}`}
+                      </span>
+                    </div>
 
-                      <div className="text-[14px] font-black leading-tight text-slate-950">
-                        {formatDate(order.delivery_date)}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="truncate text-[14px] font-black text-slate-950" title={order.clinic_name || '-'}>
-                          {order.clinic_name || '-'}
-                        </div>
-                        {order.product_type ? (
-                          <div className="mt-1 truncate text-[11px] font-bold text-slate-400" title={order.product_type}>
-                            {order.product_type}
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="truncate text-[14px] font-black text-slate-950" title={patientName}>
-                          {patientName}
-                        </div>
-                        <div className="mt-1 text-[11px] font-bold text-slate-500">
-                          {orderNumber}
-                        </div>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <span className={`inline-flex h-7 items-center rounded-full px-3 text-[11px] font-black ${statusBadgeClass(order.status)}`}>
-                          {displayStatus}
+                    <div className="grid grid-cols-2 gap-3 rounded-[16px] bg-[#f8fafc] p-3 text-[13px] text-[#475467] sm:grid-cols-3 lg:contents">
+                      <div className="flex min-w-0 flex-col">
+                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                          제품 유형
+                        </span>
+                        <span className="truncate font-extrabold text-[#1f2937]" title={order.product_type || '-'}>
+                          {order.product_type || '-'}
                         </span>
                       </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </section>
 
-        {filteredOrders.length > 0 && (
-          <div className="mt-5 flex w-full flex-col gap-3 text-[13px] font-bold text-slate-700 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              {pageStartIndex + 1}-{pageEndIndex} / {filteredOrders.length}건
-            </div>
+                      <div className="flex min-w-0 flex-col">
+                        <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                          희망 납기일
+                        </span>
+                        <span className="truncate font-extrabold text-blue-600">
+                          {formatDate(order.delivery_date)}
+                        </span>
+                      </div>
 
-            <div className="flex items-center gap-1.5">
-              {Array.from({ length: totalPages }).map((_, index) => {
-                const pageNumber = index + 1
+                      {userRole === 'admin' && (
+                        <div className="col-span-2 flex min-w-0 flex-col sm:col-span-1">
+                          <span className="mb-1 text-[11px] font-bold text-[#98a2b3]">
+                            치과명
+                          </span>
+                          <span
+                            className="truncate font-extrabold text-[#3b82f6]"
+                            title={order.clinic_name || '-'}
+                          >
+                            {order.clinic_name || '-'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
-                return (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    onClick={() => setPage(pageNumber)}
-                    className={`h-8 min-w-8 rounded-full px-2 text-[13px] font-black transition ${
-                      safePage === pageNumber
-                        ? 'bg-slate-950 text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-                    }`}
-                  >
-                    {pageNumber}
-                  </button>
+                    <div className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-[#eef2f6] pt-3 lg:w-auto lg:flex-col lg:items-end lg:border-t-0 lg:pt-0">
+                      <span className="whitespace-nowrap text-[11px] font-bold text-[#98a2b3]">
+                        접수일: {formatOrderCreatedDate(order)}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          router.push(`/orders/${order.id}`)
+                        }}
+                        className="rounded-[10px] border border-[#d6dde8] bg-white px-5 py-2 text-[13px] font-bold text-[#475467] transition hover:bg-[#f8fafc] hover:text-[#1f2937]"
+                      >
+                        상세 보기
+                      </button>
+                    </div>
+                  </div>
                 )
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </main>
   )
