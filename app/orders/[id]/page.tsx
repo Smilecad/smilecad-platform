@@ -459,6 +459,22 @@ function getDisplayOrderStatus(status?: string | null) {
   return value
 }
 
+
+function getProgressStepIndex(status?: string | null) {
+  const value = getDisplayOrderStatus(status)
+  const exactIndex = ADMIN_STATUS_OPTIONS.findIndex((item) => item === value)
+
+  if (exactIndex >= 0) return exactIndex
+
+  if (value.includes('주문') || value.includes('접수')) return 0
+  if (value.includes('작업')) return 1
+  if (value.includes('확인서')) return 2
+  if (value.includes('수정')) return 3
+  if (value.includes('제작') || value.includes('완료')) return 4
+
+  return 0
+}
+
 function statusStyle(status?: string | null) {
   const value = getDisplayOrderStatus(status)
 
@@ -1647,6 +1663,29 @@ export default function OrderDetailPage() {
     return [baseStep, ...normalizedHistory]
   }, [order])
 
+
+  const currentProgressIndex = getProgressStepIndex(order?.status)
+
+  const progressSteps = useMemo(() => {
+    return ADMIN_STATUS_OPTIONS.map((label, index) => {
+      const matchedHistory = historySteps.find((step) => step.label === label)
+      const isDone = index < currentProgressIndex
+      const isCurrent = index === currentProgressIndex
+      const isWaiting = index > currentProgressIndex
+
+      return {
+        label,
+        index,
+        time:
+          matchedHistory?.time ||
+          (label === '주문 접수' ? getOrderCreatedDateTime(order) : '-'),
+        isDone,
+        isCurrent,
+        isWaiting,
+      }
+    })
+  }, [historySteps, currentProgressIndex, order])
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
@@ -1765,83 +1804,69 @@ export default function OrderDetailPage() {
           </div>
         </section>
 
-        <section className="mb-7 rounded-[28px] border border-slate-200 bg-white p-7 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
-          <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <section className="mb-7 rounded-[24px] border border-slate-200 bg-white px-6 py-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] sm:px-7">
+          <div className="mb-5 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="text-blue-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 ring-1 ring-blue-100">
                 <IconClock />
               </div>
-              <h2 className="text-[22px] font-black tracking-[-0.03em] text-slate-950">
+              <h2 className="text-[20px] font-black tracking-[-0.03em] text-slate-950">
                 주문 이력
               </h2>
             </div>
 
-            {userRole === 'admin' && (
-              <div className="flex flex-wrap gap-2">
-                {ADMIN_STATUS_OPTIONS.map((s) => (
-                  <button
-                    key={s}
-                    disabled={updating || getDisplayOrderStatus(order.status) === s}
-                    onClick={() => handleStatusUpdate(s)}
-                    className={`rounded-2xl px-4 py-2 text-[13px] font-black transition-all ${
-                      getDisplayOrderStatus(order.status) === s
-                        ? 'bg-slate-900 text-white shadow-md'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
+            <span className={`hidden rounded-full border px-3 py-1 text-[12px] font-black sm:inline-flex ${statusStyle(order.status)}`}>
+              현재 상태: {getDisplayOrderStatus(order.status)}
+            </span>
           </div>
 
-          <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max items-stretch gap-4">
-              {historySteps.map((step, index) => (
-                <div key={`${step.label}-${step.time}`} className="flex items-center gap-4">
-                  <div
-                    className={`min-w-[220px] rounded-2xl border p-4 ${
-                      step.active
-                        ? 'border-emerald-200 bg-emerald-50'
-                        : step.done
-                          ? 'border-blue-100 bg-blue-50/50'
-                          : 'border-slate-200 bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`h-3 w-3 rounded-full ${
-                          step.active
-                            ? 'bg-emerald-500'
-                            : step.done
-                              ? 'bg-blue-500'
-                              : 'bg-slate-300'
-                        }`}
-                      />
-                      <p
-                        className={`text-[15px] font-black ${
-                          step.active ? 'text-emerald-700' : 'text-slate-800'
-                        }`}
-                      >
-                        {step.label}
-                      </p>
+          <div className="overflow-x-auto pb-1">
+            <div className="flex min-w-[920px] items-start rounded-[18px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+              {progressSteps.map((step, index) => (
+                <div key={step.label} className="flex flex-1 items-start">
+                  <div className="flex min-w-[120px] flex-col items-center text-center">
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-full border text-[13px] font-black transition-all ${
+                        step.isDone
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
+                          : step.isCurrent
+                            ? 'border-blue-600 bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
+                            : 'border-slate-300 bg-white text-slate-500'
+                      }`}
+                    >
+                      {step.isDone ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+                          <path
+                            d="M6 12.5 10 16.5 18 7.5"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : (
+                        step.index + 1
+                      )}
                     </div>
-                    <p className="mt-2 text-[13px] font-semibold text-slate-500">{step.time}</p>
-                    {step.memo && (
-                      <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-[12px] font-semibold text-slate-500">
-                        {step.memo}
-                      </p>
-                    )}
-                    {step.changedBy && (
-                      <p className="mt-2 text-[12px] font-bold text-slate-400">
-                        처리자: {step.changedBy}
-                      </p>
-                    )}
+
+                    <p
+                      className={`mt-2 whitespace-nowrap text-[13px] font-black ${
+                        step.isDone || step.isCurrent ? 'text-slate-950' : 'text-slate-400'
+                      }`}
+                    >
+                      {step.label}
+                    </p>
+                    <p
+                      className={`mt-1 whitespace-nowrap text-[12px] font-bold ${
+                        step.isDone || step.isCurrent ? 'text-slate-600' : 'text-slate-400'
+                      }`}
+                    >
+                      {step.time && step.time !== '대기 중' ? step.time : '-'}
+                    </p>
                   </div>
 
-                  {index < historySteps.length - 1 && (
-                    <div className="h-px w-8 shrink-0 bg-slate-200" />
+                  {index < progressSteps.length - 1 && (
+                    <div className="mt-[18px] h-px flex-1 border-t border-dashed border-slate-300" />
                   )}
                 </div>
               ))}
