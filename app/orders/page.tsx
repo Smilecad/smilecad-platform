@@ -393,13 +393,13 @@ export default function OrdersPage() {
         </div>
 
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <div className="flex w-full max-w-full flex-nowrap gap-2 overflow-x-auto whitespace-nowrap pb-1 pr-1 lg:w-auto lg:max-w-[760px] lg:overflow-visible lg:pb-0">
             {STATUS_TABS.map((status) => (
               <button
                 key={status}
                 type="button"
                 onClick={() => setSelectedStatus(status)}
-                className={`rounded-[12px] px-4 py-3 text-[13px] font-bold transition sm:px-5 sm:py-2.5 sm:text-[14px] ${
+                className={`h-10 shrink-0 rounded-[12px] px-4 text-[13px] font-bold transition sm:px-4 sm:text-[14px] ${
                   selectedStatus === status
                     ? 'bg-[#1f2937] text-white shadow-md'
                     : 'border border-[#e1e7ef] bg-white text-[#667085] hover:bg-[#f8fafc]'
