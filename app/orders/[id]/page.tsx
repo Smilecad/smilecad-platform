@@ -1740,13 +1740,6 @@ export default function OrderDetailPage() {
                   <h1 className="text-[36px] font-black leading-none tracking-[-0.04em] text-slate-950">
                     {order.patient_name || '-'}
                   </h1>
-
-                  {isRemakeOrder(order) && (
-                    <span className="mb-1 inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[13px] font-black tracking-[0.12em] text-red-600">
-                      REMAKE
-                    </span>
-                  )}
-
                   {patientMeta && (
                     <span className="mb-1 text-[15px] font-bold text-slate-500">
                       ({patientMeta})
@@ -1894,9 +1887,23 @@ export default function OrderDetailPage() {
               ].map((item) => (
                 <div key={item.label} className="px-0 py-5 md:px-7">
                   <p className="text-[13px] font-bold text-slate-500">{item.label}</p>
-                  <p className="mt-3 text-[16px] font-black text-slate-950">
-                    {item.value || '-'}
-                  </p>
+                  {item.label === '환자명' ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <p className="text-[16px] font-black text-slate-950">
+                        {item.value || '-'}
+                      </p>
+
+                      {isRemakeOrder(order) && (
+                        <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[12px] font-black tracking-[0.12em] text-red-600">
+                          REMAKE
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-[16px] font-black text-slate-950">
+                      {item.value || '-'}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
