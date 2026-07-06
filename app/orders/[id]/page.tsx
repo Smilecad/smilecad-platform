@@ -1686,6 +1686,8 @@ export default function OrderDetailPage() {
     })
   }, [historySteps, currentProgressIndex, order])
 
+  const canManuallyChangeStatus = String(userRole || '').toLowerCase() === 'admin'
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
@@ -1811,14 +1813,32 @@ export default function OrderDetailPage() {
             <div className="flex min-w-[980px] items-center rounded-[18px] border border-slate-200 bg-white px-5 py-3 shadow-sm">
               {progressSteps.map((step, index) => (
                 <div key={step.label} className="flex flex-1 items-center">
-                  <div className="flex min-w-[150px] items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleStatusUpdate(step.label)}
+                    disabled={!canManuallyChangeStatus || updating || step.isCurrent}
+                    title={
+                      canManuallyChangeStatus
+                        ? step.isCurrent
+                          ? '현재 주문 상태입니다.'
+                          : `${step.label}(으)로 상태 변경`
+                        : '관리자만 주문 상태를 변경할 수 있습니다.'
+                    }
+                    className={`group flex min-w-[150px] items-center gap-3 rounded-2xl px-2 py-2 text-left transition ${
+                      canManuallyChangeStatus && !step.isCurrent
+                        ? 'cursor-pointer hover:bg-blue-50/70'
+                        : 'cursor-default'
+                    } disabled:opacity-100`}
+                  >
                     <div
                       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[13px] font-black transition-all ${
                         step.isDone
                           ? 'border-blue-600 bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
                           : step.isCurrent
                             ? 'border-blue-600 bg-blue-600 text-white shadow-[0_8px_20px_rgba(37,99,235,0.18)]'
-                            : 'border-slate-300 bg-white text-slate-500'
+                            : canManuallyChangeStatus
+                              ? 'border-slate-300 bg-white text-slate-500 group-hover:border-blue-300 group-hover:text-blue-600'
+                              : 'border-slate-300 bg-white text-slate-500'
                       }`}
                     >
                       {step.isDone ? (
@@ -1839,7 +1859,7 @@ export default function OrderDetailPage() {
                     <div className="min-w-0 text-left">
                       <p
                         className={`whitespace-nowrap text-[13px] font-black leading-tight ${
-                          step.isDone || step.isCurrent ? 'text-slate-950' : 'text-slate-400'
+                          step.isDone || step.isCurrent ? 'text-slate-950' : 'text-slate-400 group-hover:text-blue-600'
                         }`}
                       >
                         {step.label}
@@ -1852,7 +1872,7 @@ export default function OrderDetailPage() {
                         {step.time && step.time !== '대기 중' ? step.time : '-'}
                       </p>
                     </div>
-                  </div>
+                  </button>
 
                   {index < progressSteps.length - 1 && (
                     <div
