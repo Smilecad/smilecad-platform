@@ -337,6 +337,8 @@ function toSafeUserMessage(error: unknown, fallback = DEFAULT_USER_ERROR) {
     '두께를 선택해주세요.',
     '지그 제작 여부를 선택해주세요.',
     '환자 고지 및 동의 확인 항목에 체크해주세요.',
+    '스캔 파일을 첨부해주세요.',
+    '구강 스캔 파일을 최소 1개 이상 첨부해주세요.',
     '인증 토큰이 필요합니다.',
     '토큰이 만료되었습니다.',
   ]
@@ -1272,6 +1274,11 @@ export default function NewOrderPage() {
       return
     }
 
+    if (files.length === 0) {
+      setError('스캔 파일을 첨부해주세요.')
+      return
+    }
+
     if (!isAgreed) {
       setError('환자 고지 및 동의 확인 항목에 체크해주세요.')
       return
@@ -1288,6 +1295,12 @@ export default function NewOrderPage() {
       setError('로그인 정보가 없습니다. 다시 로그인해주세요.')
       setShowConfirmModal(false)
       router.replace('/login')
+      return
+    }
+
+    if (files.length === 0) {
+      setError('스캔 파일을 첨부해주세요.')
+      setShowConfirmModal(false)
       return
     }
 
@@ -1917,8 +1930,13 @@ export default function NewOrderPage() {
                 </div>
               </div>
 
-              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 text-[16px] font-extrabold text-[#263142] sm:px-6 sm:text-[17px]">
-                파일 업로드
+              <div className="border-y border-[#e9edf4] bg-[#f7f9fc] px-4 py-4 sm:px-6">
+                <div className="text-[16px] font-extrabold text-[#263142] sm:text-[17px]">
+                  파일 업로드 <span className="text-red-500">*</span>
+                </div>
+                <div className="mt-1 text-[12px] font-semibold text-[#ef4444]">
+                  구강 스캔 파일을 최소 1개 이상 첨부해야 주문 접수가 가능합니다.
+                </div>
               </div>
 
               <div className="p-4 sm:p-6">
@@ -1937,7 +1955,7 @@ export default function NewOrderPage() {
 
                   <div className="w-full px-4 py-6 sm:px-6 sm:py-8">
                     <div className="mb-2 text-[15px] font-semibold text-[#667085] sm:text-[16px]">
-                      업로드할 파일을 선택해주세요.
+                      업로드할 구강 스캔 파일을 선택해주세요.
                     </div>
                     <div className="text-[12px] text-[#98a2b3]">
                       파일당 최대 500MB / 최대 {MAX_FILE_COUNT}개
@@ -2083,6 +2101,22 @@ export default function NewOrderPage() {
                       {deliveryDate || '-'}
                     </div>
                   </div>
+                </div>
+
+                <div className="rounded-[18px] border border-blue-100 bg-blue-50 p-4">
+                  <div className="text-[13px] font-black text-blue-600">스캔 파일</div>
+                  <div className="mt-2 text-[15px] font-bold leading-6 text-blue-900">
+                    {files.length > 0 ? `${files.length}개 첨부됨` : '첨부된 스캔 파일 없음'}
+                  </div>
+                  {files.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {files.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="truncate text-[12px] font-semibold text-blue-700">
+                          {index + 1}. {file.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {isRemake && (
