@@ -233,6 +233,7 @@ export default function OrdersPage() {
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(null)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [searchTarget, setSearchTarget] = useState<'patient' | 'clinic'>('patient')
   const [patientSearch, setPatientSearch] = useState('')
 
   const fetchOrders = useCallback(async () => {
@@ -310,17 +311,18 @@ export default function OrdersPage() {
   }, [fetchOrders])
 
   const filteredOrders = useMemo(() => {
-    const patientKeyword = patientSearch.trim().toLowerCase()
+    const searchKeyword = patientSearch.trim().toLowerCase()
 
     return orders.filter((order) => {
       const matchStatus = selectedStatus === '전체' || getDisplayStatus(order.status) === selectedStatus
-      const matchPatient =
-        !patientKeyword || String(order.patient_name || '').toLowerCase().includes(patientKeyword)
+      const searchSource = searchTarget === 'clinic' ? order.clinic_name : order.patient_name
+      const matchSearch =
+        !searchKeyword || String(searchSource || '').toLowerCase().includes(searchKeyword)
 
       const orderDateKey = getOrderCreatedDateKey(order)
 
       if (!orderDateKey) {
-        return matchStatus && matchPatient
+        return matchStatus && matchSearch
       }
 
       let matchStartDate = true
@@ -333,9 +335,9 @@ export default function OrdersPage() {
         matchEndDate = orderDateKey <= endDate
       }
 
-      return matchStatus && matchPatient && matchStartDate && matchEndDate
+      return matchStatus && matchSearch && matchStartDate && matchEndDate
     })
-  }, [orders, selectedStatus, startDate, endDate, patientSearch])
+  }, [orders, selectedStatus, startDate, endDate, patientSearch, searchTarget])
 
   const resetDateFilter = () => {
     setStartDate('')
@@ -412,15 +414,42 @@ export default function OrdersPage() {
 
           <div className="grid w-full gap-3 sm:grid-cols-[minmax(220px,300px)_auto] lg:w-auto lg:items-start">
             <div className="rounded-[16px] border border-[#e1e7ef] bg-white p-3 shadow-sm">
-              <div className="mb-3 whitespace-nowrap text-[13px] font-bold text-[#667085]">
-                환자명 검색
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="whitespace-nowrap text-[13px] font-bold text-[#667085]">
+                  검색 기준
+                </span>
+
+                <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#e1e7ef] bg-[#f8fafc] p-1 text-[12px] font-black">
+                  <button
+                    type="button"
+                    onClick={() => setSearchTarget('patient')}
+                    className={`rounded-[8px] px-2 py-1.5 transition ${
+                      searchTarget === 'patient'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-[#98a2b3] hover:text-[#667085]'
+                    }`}
+                  >
+                    환자명
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSearchTarget('clinic')}
+                    className={`rounded-[8px] px-2 py-1.5 transition ${
+                      searchTarget === 'clinic'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-[#98a2b3] hover:text-[#667085]'
+                    }`}
+                  >
+                    치과명
+                  </button>
+                </div>
               </div>
 
               <input
                 type="text"
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
-                placeholder="예: 홍길동"
+                placeholder={searchTarget === 'clinic' ? '예: 스마트치과' : '예: 홍길동'}
                 className="h-10 w-full rounded-[10px] bg-[#f8fafc] px-3 text-[14px] font-semibold text-[#475467] outline-none focus:border-[#9db7ff] focus:bg-white"
               />
             </div>

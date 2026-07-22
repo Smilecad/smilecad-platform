@@ -825,6 +825,18 @@ function isRemakeOrder(order: any) {
   return text === 'true' || text === 'yes' || text === 'y' || text === '1'
 }
 
+function getRemakeReason(order: any) {
+  return String(
+    order?.remake_reason ??
+      order?.remakeReason ??
+      order?.remake_note ??
+      order?.remakeNote ??
+      order?.remake_memo ??
+      order?.remakeMemo ??
+      ''
+  ).trim()
+}
+
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -1948,6 +1960,21 @@ export default function OrderDetailPage() {
                 <p className="mt-3 whitespace-pre-wrap text-[16px] font-black leading-relaxed text-slate-950">
                   {order.request_note || '-'}
                 </p>
+
+                {isRemakeOrder(order) && (
+                  <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full border border-red-200 bg-white px-3 py-1 text-[11px] font-black tracking-[0.12em] text-red-600">
+                        REMAKE
+                      </span>
+                      <p className="text-[13px] font-black text-red-700">리메이크 사유</p>
+                    </div>
+
+                    <p className="mt-3 whitespace-pre-wrap text-[15px] font-black leading-relaxed text-red-900">
+                      {getRemakeReason(order) || '리메이크 사유가 입력되지 않았거나, 현재 상세 API 응답에 사유가 포함되지 않았습니다.'}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
