@@ -1933,13 +1933,9 @@ export default function OrderDetailPage() {
 
                           <span
                             className="min-w-0 max-w-full text-[12px] font-bold leading-5 text-red-700 md:max-w-[250px]"
-                            title={
-                              getRemakeReason(order) ||
-                              '리메이크 사유가 입력되지 않았거나, 현재 상세 API 응답에 사유가 포함되지 않았습니다.'
-                            }
+                            title={getRemakeReason(order) || '사유 없음'}
                           >
-                            {getRemakeReason(order) ||
-                              '리메이크 사유가 입력되지 않았거나, 현재 상세 API 응답에 사유가 포함되지 않았습니다.'}
+                            {getRemakeReason(order) || '사유 없음'}
                           </span>
                         </>
                       )}

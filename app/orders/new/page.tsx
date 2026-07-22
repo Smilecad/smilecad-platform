@@ -336,6 +336,7 @@ function toSafeUserMessage(error: unknown, fallback = DEFAULT_USER_ERROR) {
     '유형을 선택해주세요.',
     '두께를 선택해주세요.',
     '지그 제작 여부를 선택해주세요.',
+    '리메이크 사유를 입력해주세요.',
     '환자 고지 및 동의 확인 항목에 체크해주세요.',
     '스캔 파일을 첨부해주세요.',
     '구강 스캔 파일을 최소 1개 이상 첨부해주세요.',
@@ -1274,6 +1275,11 @@ export default function NewOrderPage() {
       return
     }
 
+    if (isRemake && !remakeReason.trim()) {
+      setError('리메이크 사유를 입력해주세요.')
+      return
+    }
+
     if (files.length === 0) {
       setError('스캔 파일을 첨부해주세요.')
       return
@@ -1295,6 +1301,12 @@ export default function NewOrderPage() {
       setError('로그인 정보가 없습니다. 다시 로그인해주세요.')
       setShowConfirmModal(false)
       router.replace('/login')
+      return
+    }
+
+    if (isRemake && !remakeReason.trim()) {
+      setError('리메이크 사유를 입력해주세요.')
+      setShowConfirmModal(false)
       return
     }
 
@@ -1601,7 +1613,7 @@ export default function NewOrderPage() {
 
                 <div className="border-t border-[#eef2f6] pt-5">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[82px_1fr] sm:items-start sm:gap-4">
-                    <FieldLabel>remake여부</FieldLabel>
+                    <FieldLabel required={isRemake}>remake여부</FieldLabel>
                     <div className="space-y-3">
                       <label className="flex items-center gap-3 text-[14px] font-medium text-[#4b5565]">
                         <input
@@ -1622,15 +1634,23 @@ export default function NewOrderPage() {
                         value={remakeReason}
                         onChange={(e) => setRemakeReason(e.target.value)}
                         disabled={!isRemake}
-                        placeholder="ex) 끊어짐, 안맞음, 떨어짐"
+                        required={isRemake}
+                        placeholder={isRemake ? '리메이크 사유를 입력해주세요.' : 'ex) 끊어짐, 안맞음, 떨어짐'}
                         className={classNames(
                           'h-11 w-full rounded-[12px] border border-[#d6dde8] bg-white px-4 text-[14px] text-[#344054] outline-none transition placeholder:text-[#9aa4b2] focus:border-[#9db7ff] focus:shadow-[0_0_0_4px_rgba(36,85,255,0.08)]',
                           !isRemake && 'bg-[#f8fafc] text-[#98a2b3]'
                         )}
                       />
 
-                      <div className="text-[12px] font-semibold text-[#98a2b3]">
-                        리메이크 주문인 경우 사유를 함께 입력해주세요.
+                      <div
+                        className={classNames(
+                          'text-[12px] font-semibold',
+                          isRemake ? 'text-red-500' : 'text-[#98a2b3]'
+                        )}
+                      >
+                        {isRemake
+                          ? '리메이크 주문은 사유를 반드시 입력해야 합니다.'
+                          : '리메이크 주문인 경우 사유를 함께 입력해주세요.'}
                       </div>
                     </div>
                   </div>
