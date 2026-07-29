@@ -133,7 +133,7 @@ function statusBadgeClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'border-blue-200 bg-blue-50 text-blue-700'
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
@@ -155,7 +155,7 @@ function statusAccentClass(status?: string | null) {
   const value = getDisplayStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'before:bg-blue-500'
+    return 'before:bg-emerald-500'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
