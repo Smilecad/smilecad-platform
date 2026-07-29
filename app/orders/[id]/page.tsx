@@ -479,18 +479,22 @@ function statusStyle(status?: string | null) {
   const value = getDisplayOrderStatus(status)
 
   if (value.includes('제작 진행') || value.includes('완료')) {
-    return 'border-emerald-100 bg-emerald-50 text-emerald-700'
-  }
-
-  if (value.includes('디자인') || value.includes('작업') || value.includes('확인서')) {
-    return 'border-amber-100 bg-amber-50 text-amber-700'
+    return 'border-violet-200 bg-violet-50 text-violet-700'
   }
 
   if (value.includes('수정') || value.includes('재접수')) {
-    return 'border-orange-100 bg-orange-50 text-orange-700'
+    return 'border-red-200 bg-red-50 text-red-700'
   }
 
-  return 'border-blue-100 bg-blue-50 text-blue-700'
+  if (value.includes('확인서')) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+
+  if (value.includes('디자인') || value.includes('작업')) {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
+  }
+
+  return 'border-blue-200 bg-blue-50 text-blue-700'
 }
 
 function confirmationStatusStyle(status?: string | null) {
